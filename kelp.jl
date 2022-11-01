@@ -4,17 +4,17 @@ using Oceananigans.Units: minutes, minute, hour, hours, day
 include("macrosystis_dynamics.jl")
 
 # ## Setup grid 
-grid = RectilinearGrid(size=(16, 16, 16), extent=(32, 32, 32), topology=(Periodic, Periodic, Bounded))
+grid = RectilinearGrid(size=(16, 16, 16), extent=(32, 32, 8), topology=(Periodic, Periodic, Bounded))
 
 # ## Setup kelp particles
 n_kelp = 1
-n_seg = 8
+n_seg = 16
 
 x₀ = repeat([grid.xᶜᵃᵃ[8]], n_kelp)
 y₀ = repeat([grid.yᵃᶜᵃ[8]], n_kelp)
 z₀ = repeat([grid.zᵃᵃᶜ[1]], n_kelp)
 
-l⃗₀₀ = repeat([1.0], n_seg)
+l⃗₀₀ = repeat([1/2], n_seg)
 x⃗₀ = zeros(n_seg, 3)
 x⃗₀[:, 3] .= [sum(l⃗₀₀[1:k]) for k=1:n_seg]
 u⃗₀ = zeros(n_seg, 3)
@@ -30,7 +30,7 @@ nodes = repeat([individuals_nodes], n_kelp)
 
 kelp_particles = StructArray{GiantKelp}((x₀, y₀, z₀, zeros(n_kelp), zeros(n_kelp), zeros(n_kelp), zeros(n_kelp), zeros(n_kelp), zeros(n_kelp), nodes))
 
-particles = LagrangianParticles(kelp_particles; dynamics=dynamics!, parameters=(k = 10^5, α = 1.41, ρₒ = 1026.0, g = 9.81, Cᵈ = 1.0, Cᵃ = 3.0)) #α=1.41, k=2e5 ish for Utter/Denny
+particles = LagrangianParticles(kelp_particles; dynamics=dynamics!, parameters=(k = 10^5, α = 1.41, ρₒ = 1026.0, ρₐ = 1.225, g = 9.81, Cᵈ = 1.0, Cᵃ = 3.0)) #α=1.41, k=2e5 ish for Utter/Denny
 
 # ## Setup model
 u₁₀ = 10.0    # m s⁻¹, average wind velocity 10 meters above the ocean
@@ -90,7 +90,7 @@ end
 
 using GLMakie
 fig = Figure(resolution = (1000, 500))
-ax  = Axis(fig[1, 1]; limits=((0, maximum(x⃗[:, :, 1])), (0, maximum(x⃗[:, :, 3]))), xlabel="x (m)", ylabel="z (m)", title="t=$(prettytime(0))")
+ax  = Axis(fig[1, 1]; limits=((0, maximum(x⃗[:, :, 1])), (0, maximum(x⃗[:, :, 3]))), xlabel="x (m)", ylabel="z (m)", title="t=$(prettytime(0))", aspect = AxisAspect(2*maximum(x⃗[:, :, 1])/maximum(x⃗[:, :, 3])))
 
 # animation settings
 nframes = length(times)
