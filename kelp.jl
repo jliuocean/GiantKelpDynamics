@@ -30,10 +30,10 @@ nodes = repeat([individuals_nodes], n_kelp)
 
 kelp_particles = StructArray{GiantKelp}((x₀, y₀, z₀, zeros(n_kelp), zeros(n_kelp), zeros(n_kelp), zeros(n_kelp), zeros(n_kelp), zeros(n_kelp), nodes))
 
-particles = LagrangianParticles(kelp_particles; dynamics=dynamics!, parameters=(k = 10^5, α = 1.41, ρₒ = 1026.0, g = 9.81, Cᵈ = 1.0)) #α=1.41, k=2e5 ish for Utter/Denny
+particles = LagrangianParticles(kelp_particles; dynamics=dynamics!, parameters=(k = 10^5, α = 1.41, ρₒ = 1026.0, g = 9.81, Cᵈ = 1.0, Cᵃ = 3.0)) #α=1.41, k=2e5 ish for Utter/Denny
 
 # ## Setup model
-u₁₀ = 10    # m s⁻¹, average wind velocity 10 meters above the ocean
+u₁₀ = 10.0    # m s⁻¹, average wind velocity 10 meters above the ocean
 cᴰ = 2.5e-3 # dimensionless drag coefficient
 ρₐ = 1.225  # kg m⁻³, average density of air at sea-level
 ρₒ = 1026.0 # kg m⁻³, average density at the surface of the world ocean
@@ -54,10 +54,7 @@ model = NonhydrostaticModel(; grid,
 uᵢ(x, y, z) = sqrt(abs(Qᵘ)) * 1e-3 * Ξ(z)
 set!(model, u=0.15, w=uᵢ, v=uᵢ, A=1.0)
 
-simulation = Simulation(model, Δt=0.1, stop_time=1day)
-
-wizard = TimeStepWizard(cfl=1.0, max_change=1.1, max_Δt=10minutes, diffusive_cfl=0.5)
-#simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
+simulation = Simulation(model, Δt=0.2, stop_time=2minutes)
 
 progress_message(sim) = @printf("Iteration: %04d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, wall time: %s\n",
                                 iteration(sim), prettytime(sim), prettytime(sim.Δt),
@@ -84,65 +81,28 @@ end
 simulation.callbacks[:save_particles] = Callback(store_particles!)
 run!(simulation)
 
+file = jldopen("kelp_particles.jld2")
+times = keys(file["x⃗"])
+x⃗ = zeros(length(times), n_seg, 3)
+for (i, t) in enumerate(times)
+    x⃗[i, :, :] = file["x⃗/$t"][1].x⃗
+end
+
 using GLMakie
-
-u = FieldTimeSeries("$filepath.jld2", "u")
-v = FieldTimeSeries("$filepath.jld2", "v")
-w = FieldTimeSeries("$filepath.jld2", "w")
-A = FieldTimeSeries("$filepath.jld2", "A")
-
-xu, yu, zu = nodes(u)
-xv, yv, zv = nodes(v)
-xw, yw, zw = nodes(w)
-xA, yA, zA = nodes(A)
-
-times =u.times
-intro = searchsortedfirst(times, 1minutes)
-
-n = Observable(intro)
-
-uₙ = @lift interior(u[$n],  :, 1, :)
-vₙ = @lift interior(v[$n],  :, 1, :)
-wₙ = @lift interior(w[$n],  :, 1, :)
-Aₙ = @lift interior(A[$n],  :, 1, :)
-
 fig = Figure(resolution = (1000, 500))
+ax  = Axis(fig[1, 1]; limits=((0, maximum(x⃗[:, :, 1])), (0, maximum(x⃗[:, :, 3]))), xlabel="x (m)", ylabel="z (m)", title="t=$(prettytime(0))")
 
-axis_kwargs = (xlabel="x (m)",
-               ylabel="z (m)",
-               aspect = AxisAspect(grid.Lx/grid.Lz),
-               limits = ((0, grid.Lx), (-grid.Lz, 0)))
+# animation settings
+nframes = length(times)
+framerate = 10
+frame_iterator = range(1, nframes)
 
-ax_u  = Axis(fig[2, 1]; title = "u", axis_kwargs...)
-ax_v  = Axis(fig[2, 3]; title = "v", axis_kwargs...)
-ax_w  = Axis(fig[3, 1]; title = "w", axis_kwargs...)
-ax_A  = Axis(fig[3, 3]; title = "A", axis_kwargs...)
-
-title = @lift @sprintf("t = %s", prettytime(times[$n]))
-
-ulim = (min(0, minimum(u)), maximum(u))
-vlim = (minimum(v), maximum(v))
-wlim = (minimum(w), maximum(w))
-Alim = (minimum(A), maximum(A))
-
-hm_u = heatmap!(ax_u, xu, zu, uₙ; colormap = :batlow, colorrange = ulim)
-Colorbar(fig[2, 2], hm_u; label = "m s⁻¹")
-
-hm_v = heatmap!(ax_v, xv, zv, vₙ; colormap = :balance, colorrange = vlim)
-Colorbar(fig[2, 4], hm_v; label = "m s⁻¹")
-
-hm_w = heatmap!(ax_w, xw, zw, wₙ; colormap = :balance, colorrange = wlim)
-Colorbar(fig[3, 2], hm_w; label = "m s⁻¹")
-
-hm_w = heatmap!(ax_A, xA, zA, Aₙ; colormap = :balance, colorrange = wlim)
-Colorbar(fig[3, 4], hm_w; label = "m⁻³")
-
-fig[1, 1:4] = Label(fig, title, textsize=24, tellwidth=false)
-
-frames = intro:length(times)
-
-record(fig, filepath * ".mp4", frames, framerate=16) do i
-    msg = string("Plotting frame ", i, " of ", frames[end])
+record(fig, "nodes.mp4", frame_iterator; framerate = framerate) do i
+    msg = string("Plotting frame ", i, " of ", nframes)
     print(msg * " \r")
-    n[] = i
+    if !(i==1)
+        plot!(ax, x⃗[i-1, :, 1], x⃗[i-1, :, 3]; color=:white)
+    end
+    plot!(ax, x⃗[i, :, 1], x⃗[i, :, 3])
+    ax.title = "t=$(prettytime(parse(Float64, times[i])))"
 end
