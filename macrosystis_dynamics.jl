@@ -1,5 +1,6 @@
 using KernelAbstractions, LinearAlgebra
 using Oceananigans.Architectures: device, arch_array
+using Oceananigans.Fields: interpolate
 
 const rk3 = ((8//15, nothing), (5//12, -17//60), (3//4, -5//12))
 
@@ -37,17 +38,27 @@ struct GiantKelp
     #information about nodes
     nodes::Nodes
 end
-@inline tension(Δx⃗, l₀, Aᶜ, params) = dot(Δx⃗, Δx⃗)>l₀^2 ? params.k*((sqrt(dot(Δx⃗, Δx⃗)) - l₀)/l₀)^params.α*Aᶜ : 0.0
+@inline tension(Δx, l₀, Aᶜ, params) = Δx>l₀ && !(Δx==0.0)  ? params.k*((Δx- l₀)/l₀)^params.α*Aᶜ : 0.0
 
-@kernel function step_node!(properties, Δt, γ, ζ, params)
+@kernel function step_node!(properties, model, Δt, γ, ζ, params)
     p, i = @index(Global, NTuple)
 
     node = @inbounds properties.nodes[p]
 
+    x, y, z = [properties.x[p], properties.y[p], properties.z[p]] + node.x⃗[i, :]
+
     Fᴮ = @inbounds (params.ρₒ - node.ρ⃗[i])*node.V⃗[i]*[0.0, 0.0, params.g]
 
-    #TODO: Water velocity is actually water velocity at base not at each node, need to add some interpolation from the model
-    u⃗ᵣₑₗ = [properties.u[p]-properties.u₀[p], properties.v[p]-properties.v₀[p], properties.w[p]-properties.w₀[p]] .- node.u⃗[i, :]
+    if Fᴮ[3] > 0 && z >= 0  # i.e. floating up not sinking, and outside of the surface
+        Fᴮ[3] = 0.0
+    end
+
+    u⃗ʷ = [interpolate.(values(model.velocities), x, y, z)...]
+    u⃗ᵣₑₗ = u⃗ʷ - [properties.u₀[p], properties.v₀[p], properties.w₀[p]] - node.u⃗[i, :]
+
+    a⃗ʷ = [interpolate.(values(model.timestepper.Gⁿ[(:u, :v, :w)]), x, y, z)...]
+    a⃗ᵣₑₗ = a⃗ʷ - node.F⃗[i, :]./(node.ρ⃗[i]*node.V⃗[i] + params.ρₒ*params.Cᵃ*node.V⃗[i])
+
     Fᴰ = @inbounds .5*params.ρₒ*params.Cᵈ*node.A⃗ᶠ[i]*abs.(u⃗ᵣₑₗ).*u⃗ᵣₑₗ
 
     x⃗ = @inbounds node.x⃗[i, :]
@@ -73,11 +84,16 @@ end
     Δx⃗⁻ = x⃗⁻ - x⃗
     Δx⃗⁺ = x⃗⁺ - x⃗
 
-    T⁻ = tension(Δx⃗⁻, l₀⁻, Aᶜ⁻, params).*Δx⃗⁻./sqrt(dot(Δx⃗⁻, Δx⃗⁻))
-    T⁺ = tension(Δx⃗⁺, l₀⁺, Aᶜ⁺, params).*Δx⃗⁺./sqrt(dot(Δx⃗⁺, Δx⃗⁺))
+    Δx⁻ = sqrt(dot(Δx⃗⁻, Δx⃗⁻))
+    Δx⁺ = sqrt(dot(Δx⃗⁺, Δx⃗⁺))
+
+    T⁻ = tension(sqrt(dot(Δx⃗⁻, Δx⃗⁻)), l₀⁻, Aᶜ⁻, params).*Δx⃗⁻./(Δx⁻+eps(0.0))
+    T⁺ = tension(sqrt(dot(Δx⃗⁺, Δx⃗⁺)), l₀⁺, Aᶜ⁺, params).*Δx⃗⁺./(Δx⁺+eps(0.0))
+
+    Fⁱ = params.ρₒ*node.V⃗[i].*(params.Cᵃ*a⃗ᵣₑₗ + a⃗ʷ)
 
     @inbounds begin 
-        node.F⃗[i, :] = (Fᴮ + Fᴰ + T⁻ + T⁺)./(node.ρ⃗[i]*node.V⃗[i])
+        node.F⃗[i, :] = (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ)./(node.ρ⃗[i]*node.V⃗[i] + params.ρₒ*params.Cᵃ*node.V⃗[i])
         if any(isnan.(node.F⃗[i, :])) error("F is NaN: i=$i $(Fᴮ) .+ $(Fᴰ) .+ $(T⁻) .+ $(T⁺)") end
 
         node.u⃗⁻[i, :] = node.u⃗[i, :]
@@ -85,6 +101,10 @@ end
         node.F⃗⁻[i, :] = node.F⃗[i, :]
 
         node.x⃗[i, :] += rk3_substep(node.u⃗[i, :], node.u⃗⁻[i, :], Δt, γ, ζ)
+
+        if node.x⃗[i, 3] + properties.z[p] > 0.0 #given above bouyancy conditions this should never be possible (assuming a flow with zero vertical velocity at the surface, i.e. a real one)
+            node.x⃗[i, 3] = -properties.z[p]
+        end
     end
 end
 
@@ -130,7 +150,7 @@ function dynamics!(particles, model, Δt)
 
     for (γ, ζ) in rk3
         step_node_kernel! = step_node!(device(model.architecture), workgroup, worksize)
-        step_node_event = step_node_kernel!(particles.properties, Δt, 1, nothing, particles.parameters)
+        step_node_event = step_node_kernel!(particles.properties, model, Δt, 1, nothing, particles.parameters)
         wait(step_node_event)
     end
 end

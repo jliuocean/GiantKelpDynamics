@@ -8,15 +8,16 @@ grid = RectilinearGrid(size=(16, 16, 16), extent=(32, 32, 8), topology=(Periodic
 
 # ## Setup kelp particles
 n_kelp = 1
-n_seg = 16
+n_seg = 8
 
 x₀ = repeat([grid.xᶜᵃᵃ[8]], n_kelp)
 y₀ = repeat([grid.yᵃᶜᵃ[8]], n_kelp)
 z₀ = repeat([grid.zᵃᵃᶜ[1]], n_kelp)
 
-l⃗₀₀ = repeat([1/2], n_seg)
+l⃗₀₀ = repeat([1.0], n_seg)
 x⃗₀ = zeros(n_seg, 3)
 x⃗₀[:, 3] .= [sum(l⃗₀₀[1:k]) for k=1:n_seg]
+x⃗₀[:, 3][x⃗₀[:, 3] .- 8 .> 0] .= 0.0
 u⃗₀ = zeros(n_seg, 3)
 ρ⃗₀ = repeat([800.0], n_seg)
 V⃗₀ = repeat([1*0.2*0.02], n_seg)
@@ -90,11 +91,11 @@ end
 
 using GLMakie
 fig = Figure(resolution = (1000, 500))
-ax  = Axis(fig[1, 1]; limits=((0, maximum(x⃗[:, :, 1])), (0, maximum(x⃗[:, :, 3]))), xlabel="x (m)", ylabel="z (m)", title="t=$(prettytime(0))", aspect = AxisAspect(2*maximum(x⃗[:, :, 1])/maximum(x⃗[:, :, 3])))
+ax  = Axis(fig[1, 1]; limits=((0, maximum(x⃗[:, :, 1])), (0, maximum(x⃗[:, :, 3]))), xlabel="x (m)", ylabel="z (m)", title="t=$(prettytime(0))", aspect = AxisAspect(maximum(x⃗[:, :, 1])/maximum(x⃗[:, :, 3])))
 
 # animation settings
 nframes = length(times)
-framerate = 10
+framerate = floor(Int, nframes/2minutes)
 frame_iterator = range(1, nframes)
 
 record(fig, "nodes.mp4", frame_iterator; framerate = framerate) do i
