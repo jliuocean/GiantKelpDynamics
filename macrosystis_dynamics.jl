@@ -10,17 +10,19 @@ struct Nodes
     # nodes
     x⃗# node positions relative to base
     u⃗ # node velocities in rest frame of base
-    ρ⃗ # each node can be different density, diagnostic of bladders and frond distribution
-    V⃗ # node volume
-    A⃗ᶠ # segment flow projected area
-    A⃗ᶜ # cross sectional area (for elasticity)
     l⃗₀ # segment unstretched length
+    r⃗ˢ # stipe radius
+    n⃗ᵇ # number of bladdes
+    A⃗ᵇ # area of individual blade
+    V⃗ᵖ # volume of pneumatocysts assuming density is air so ∼ 0 kg/m³
 
     # forces on nodes and force history
     F⃗
     u⃗⁻
     F⃗⁻
+    F⃗ᴰ
 end
+
 struct GiantKelp
     # origin position and velocity
     x
@@ -30,14 +32,10 @@ struct GiantKelp
     v₀
     w₀
 
-    # water velocity
-    u
-    v
-    w
-
     #information about nodes
     nodes::Nodes
 end
+
 @inline tension(Δx, l₀, Aᶜ, params) = Δx>l₀ && !(Δx==0.0)  ? params.k*((Δx- l₀)/l₀)^params.α*Aᶜ : 0.0
 
 @kernel function step_node!(properties, model, Δt, γ, ζ, params)
@@ -47,38 +45,46 @@ end
 
     x, y, z = [properties.x[p], properties.y[p], properties.z[p]] + node.x⃗[i, :]
 
-    Fᴮ = @inbounds (params.ρₒ - node.ρ⃗[i])*node.V⃗[i]*[0.0, 0.0, params.g]
-
-    if Fᴮ[3] > 0 && z >= 0  # i.e. floating up not sinking, and outside of the surface
-        Fᴮ[3] = 0.0
-    end
-
-    u⃗ʷ = [interpolate.(values(model.velocities), x, y, z)...]
-    u⃗ᵣₑₗ = u⃗ʷ - [properties.u₀[p], properties.v₀[p], properties.w₀[p]] - node.u⃗[i, :]
-
-    a⃗ʷ = [interpolate.(values(model.timestepper.Gⁿ[(:u, :v, :w)]), x, y, z)...]
-    a⃗ᵣₑₗ = a⃗ʷ - node.F⃗[i, :]./(node.ρ⃗[i]*node.V⃗[i] + params.ρₒ*params.Cᵃ*node.V⃗[i])
-
-    Fᴰ = @inbounds .5*params.ρₒ*params.Cᵈ*node.A⃗ᶠ[i]*abs.(u⃗ᵣₑₗ).*u⃗ᵣₑₗ
-
     x⃗ = @inbounds node.x⃗[i, :]
-    if i==length(node.ρ⃗)
-        x⃗⁺ = x⃗ - ones(3) # doesn't matter but needs to be non-zero
-        Aᶜ⁺ = 0.0 # doesn't matter
-        l₀⁺ = @inbounds node.l⃗₀[i] # again, doesn't matter but probs shouldn't be zero
-    else
-        x⃗⁺ = @inbounds node.x⃗[i+1, :]
-        Aᶜ⁺ = @inbounds node.A⃗ᶜ[i+1]
-        l₀⁺ = @inbounds node.l⃗₀[i+1]
-    end
-
     if i==1
         x⃗⁻ = zeros(3)
     else
         x⃗⁻ = @inbounds node.x⃗[i-1, :]
     end
 
-    Aᶜ⁻ = @inbounds node.A⃗ᶜ[i]
+    Δx = x⃗ - x⃗⁻
+    l = sqrt(dot(Δx, Δx))
+
+    Fᴮ = @inbounds (params.ρₒ-500)*node.V⃗ᵖ[i]*[0.0, 0.0, params.g] #currently assuming kelp is nutrally buoyant except for pneumatocysts
+
+    if Fᴮ[3] > 0 && z >= 0  # i.e. floating up not sinking, and outside of the surface
+        Fᴮ[3] = 0.0
+    end
+
+    Vᵐ = π*node.r⃗ˢ[i]*node.r⃗ˢ[i] + node.A⃗ᵇ[i]*0.01 # TODO: change thickness to some realistic thing
+    mᵉ = (Vᵐ + params.Cᵃ*(Vᵐ + node.V⃗ᵖ[i]))*params.ρₒ
+
+    u⃗ʷ = [interpolate.(values(model.velocities), x, y, z)...]
+    u⃗ᵣₑₗ = u⃗ʷ - [properties.u₀[p], properties.v₀[p], properties.w₀[p]] - node.u⃗[i, :]
+    sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
+
+    a⃗ʷ = [interpolate.(values(model.timestepper.Gⁿ[(:u, :v, :w)]), x, y, z)...]
+    a⃗ᵣₑₗ = a⃗ʷ - @inbounds node.F⃗[i, :]./mᵉ
+
+    Aˢ = @inbounds 2*node.r⃗ˢ[i]*l*sin(acos(abs(dot(u⃗ᵣₑₗ, Δx))/(sᵣₑₗ*l)))
+    Fᴰ = .5*params.ρₒ*(params.Cᵈˢ*Aˢ + params.Cᵈᵇ*node.n⃗ᵇ[i]*node.A⃗ᵇ[i])*sᵣₑₗ.*u⃗ᵣₑₗ
+
+    if i==length(node.l⃗₀)
+        x⃗⁺ = x⃗ - ones(3) # doesn't matter but needs to be non-zero
+        Aᶜ⁺ = 0.0 # doesn't matter
+        l₀⁺ = @inbounds node.l⃗₀[i] # again, doesn't matter but probs shouldn't be zero
+    else
+        x⃗⁺ = @inbounds node.x⃗[i+1, :]
+        Aᶜ⁺ = @inbounds π*node.r⃗ˢ[i+1]^2
+        l₀⁺ = @inbounds node.l⃗₀[i+1]
+    end
+
+    Aᶜ⁻ = @inbounds π*node.r⃗ˢ[i]^2
     l₀⁻ = @inbounds node.l⃗₀[i]
 
     Δx⃗⁻ = x⃗⁻ - x⃗
@@ -90,10 +96,12 @@ end
     T⁻ = tension(sqrt(dot(Δx⃗⁻, Δx⃗⁻)), l₀⁻, Aᶜ⁻, params).*Δx⃗⁻./(Δx⁻+eps(0.0))
     T⁺ = tension(sqrt(dot(Δx⃗⁺, Δx⃗⁺)), l₀⁺, Aᶜ⁺, params).*Δx⃗⁺./(Δx⁺+eps(0.0))
 
-    Fⁱ = params.ρₒ*node.V⃗[i].*(params.Cᵃ*a⃗ᵣₑₗ + a⃗ʷ)
+    Fⁱ = params.ρₒ*(Vᵐ+node.V⃗ᵖ[i]).*(params.Cᵃ*a⃗ᵣₑₗ + a⃗ʷ)
 
     @inbounds begin 
-        node.F⃗[i, :] = (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ)./(node.ρ⃗[i]*node.V⃗[i] + params.ρₒ*params.Cᵃ*node.V⃗[i])
+        node.F⃗[i, :] = (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ)./mᵉ
+        node.F⃗ᴰ[i, :] = Fᴰ + Fⁱ # store for back reaction onto water
+        
         if any(isnan.(node.F⃗[i, :])) error("F is NaN: i=$i $(Fᴮ) .+ $(Fᴰ) .+ $(T⁻) .+ $(T⁺)") end
 
         node.u⃗⁻[i, :] = node.u⃗[i, :]
@@ -109,7 +117,6 @@ end
 end
 
 @inline function rk3_substep(u⃗, u⃗⁻, Δt, γ, ζ)
-    @info "somehow called"
     return Δt*γ*u⃗ + Δt*ζ*u⃗⁻
 end
 
@@ -117,9 +124,9 @@ end
     return Δt*γ*u⃗
 end
 
-function dynamics!(particles, model, Δt)
+function kelp_dynamics!(particles, model, Δt)
     # for now, zero the base position and velocity
-    particles.properties.x .= model.grid.xᶜᵃᵃ[8]
+    particles.properties.x .= model.grid.xᶜᵃᵃ[1]
     particles.properties.y .= model.grid.yᵃᶜᵃ[8]
     particles.properties.z .= model.grid.zᵃᵃᶜ[1]
 
@@ -129,28 +136,34 @@ function dynamics!(particles, model, Δt)
 
     # calculate each particles node dynamics
     n_particles = length(particles)
-    worksize = n_particles
-    workgroup = min(worksize, 256)
-
-    for vel in (:u, :v, :w)
-        tracer = model.velocities[vel]
-        
-        particle_property = getproperty(particles.properties, vel)
-
-        LX, LY, LZ = location(tracer)
-
-        update_field_property_kernel! = Oceananigans.LagrangianParticleTracking.update_field_property!(device(model.architecture), workgroup, worksize)
-        source_event = update_field_property_kernel!(particle_property, particles.properties, model.grid, tracer, LX(), LY(), LZ())
-        wait(source_event)
-    end
-
-    n_nodes = length(particles.properties.nodes[1].ρ⃗)
+    n_nodes = length(particles.properties.nodes[1].l⃗₀)
     worksize = (n_particles, n_nodes)
     workgroup = (1, min(256, worksize[1]))
 
     for (γ, ζ) in rk3
         step_node_kernel! = step_node!(device(model.architecture), workgroup, worksize)
-        step_node_event = step_node_kernel!(particles.properties, model, Δt, 1, nothing, particles.parameters)
+        step_node_event = step_node_kernel!(particles.properties, model, Δt, γ, ζ, particles.parameters)
         wait(step_node_event)
     end
+end
+
+function drag_water!(particles, model)
+    # calculate each particles node dynamics
+    n_particles = length(particles)
+    worksize = n_particles
+    workgroup = min(worksize, 256)
+    
+    n_particles = length(particles)
+    n_nodes = length(particles.properties.nodes[1].l⃗₀)
+    worksize = (n_particles, n_nodes)
+    workgroup = (1, min(256, worksize[1]))
+    
+    drag_kernel! = drag_water_node!(device(model.architecture), workgroup, worksize)
+    drag_event = drag_kernel!(particles.properties, model, particles.parameters)
+    wait(drag_event)
+end
+
+function tendency_callback!(model, Δt)
+    kelp_dynamics!(model.particles, model, Δt)
+    drag_water!(model.particles, model)
 end
