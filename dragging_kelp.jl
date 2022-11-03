@@ -12,9 +12,9 @@ grid = RectilinearGrid(size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Bounded
 n_kelp = 1
 n_seg = 8
 
-x₀ = repeat([grid.xᶜᵃᵃ[1]], n_kelp)
-y₀ = repeat([grid.yᵃᶜᵃ[8]], n_kelp)
-z₀ = repeat([grid.zᵃᵃᶜ[1]], n_kelp)
+x₀ = repeat([3.0], n_kelp)
+y₀ = repeat([Ly/2], n_kelp)
+z₀ = repeat([-Lz*1.0], n_kelp)
 
 l⃗₀₀ = repeat([1.0], n_seg)
 r⃗ˢ₀ = repeat([0.03], n_seg)
@@ -39,7 +39,9 @@ kelp_particles = StructArray{GiantKelp}((x₀, y₀, z₀, zeros(n_kelp), zeros(
 
 particles = LagrangianParticles(kelp_particles; dynamics=kelp_dynamics!, parameters=(k = 10^5, α = 1.41, ρₒ = 1026.0, ρₐ = 1.225, g = 9.81, Cᵈˢ = 1.0, Cᵈᵇ=0.4*12^(-0.485), Cᵃ = 3.0)) #α=1.41, k=2e5 ish for Utter/Denny
 
-u_bcs = FieldBoundaryConditions(top = FluxBoundaryCondition(0.0), bottom = ValueBoundaryCondition(0.0), east = OpenBoundaryCondition(0.15), west = OpenBoundaryCondition(0.15))
+u₀=0.15
+
+u_bcs = FieldBoundaryConditions(top = FluxBoundaryCondition(0.0), east = OpenBoundaryCondition(u₀), west = OpenBoundaryCondition(u₀))#, bottom = ValueBoundaryCondition(0.0)
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
 
@@ -49,9 +51,12 @@ model = NonhydrostaticModel(; grid,
                                 closure = ScalarDiffusivity(ν=1e-4, κ=1e-4),
                                 boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
                                 particles=particles)
-set!(model, u=0.15)
+set!(model, u=u₀)
 
 simulation = Simulation(model, Δt=0.1, stop_time=2minutes)
+
+simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
+
 wizard = TimeStepWizard(cfl=1.0, max_change=1.1, max_Δt=0.25, diffusive_cfl=0.5)
 #simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
 progress_message(sim) = @printf("Iteration: %04d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, wall time: %s\n",
@@ -60,7 +65,7 @@ progress_message(sim) = @printf("Iteration: %04d, time: %s, Δt: %s, max(|u|) = 
     
 simulation.callbacks[:progress] = Callback(progress_message, IterationInterval(20))
 
-filepath = "kelp"
+filepath = "kelp_dragging"
 
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, merge(model.velocities, model.tracers),
@@ -94,7 +99,7 @@ nframes = length(times)
 framerate = floor(Int, nframes/30)
 frame_iterator = 1:nframes
 
-record(fig, "nodes.mp4", frame_iterator; framerate = framerate) do i
+record(fig, "nodes_dragging.mp4", frame_iterator; framerate = framerate) do i
     msg = string("Plotting frame ", i, " of ", nframes)
     print(msg * " \r")
     if !(i==1)
