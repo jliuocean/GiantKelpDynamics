@@ -168,18 +168,27 @@ end
 
     # work out how many points the drag is exerted on to get the mass to divide by
     mᵈ = 0.0
-    for i=1:grid.Nx, j=1:grid.Ny, k=1:grid.Nz if inside_cylinder(r⃗, r⃗⁻, rᵈ, i, j, k)
-        mᵈ += params.ρₒ*Oceananigans.Operators.Vᶜᶜᶜ(i, j, k, grid)
-    end end
+    mask = 0.0
+    for i=1:grid.Nx, j=1:grid.Ny, k=1:grid.Nz 
+        inside, rᵐⁱⁿ = inside_cylinder(r⃗, r⃗⁻, rᵈ, i, j, k)
+        if inside
+            mᵈ += params.ρₒ*Oceananigans.Operators.Vᶜᶜᶜ(i, j, k, grid)
+            mask += exp(-rᵐⁱⁿ^2/(2*(params.wᵈ*rᵈ)^2))
+        end 
+    end
 
     # apply the drag to the tendencies 
     # Think I either have to itterate twice or have three new fields per node to add the tendencies to, and then divide by the mass after?
     F⃗ᴰ = node.F⃗ᴰ[i, :]
-    @inbounds for i=1:grid.Nx, j=1:grid.Ny, k=1:grid.Nz if inside_cylinder(r⃗, r⃗⁻, rᵈ, i, j, k)
-        model.timestepper.Gⁿ.u[i, j, k] -= F⃗ᴰ[1]/mᵈ
-        model.timestepper.Gⁿ.v[i, j, k] -= F⃗ᴰ[2]/mᵈ
-        model.timestepper.Gⁿ.w[i, j, k] -= F⃗ᴰ[3]/mᵈ
-    end end
+    @inbounds for i=1:grid.Nx, j=1:grid.Ny, k=1:grid.Nz 
+        inside, rᵐⁱⁿ = inside_cylinder(r⃗, r⃗⁻, rᵈ, i, j, k)
+        if inside
+            smoothing = exp(-rᵐⁱⁿ^2/(2*(params.wᵈ*rᵈ)^2))/mask
+            model.timestepper.Gⁿ.u[i, j, k] -= smoothing*F⃗ᴰ[1]/mᵈ
+            model.timestepper.Gⁿ.v[i, j, k] -= smoothing*F⃗ᴰ[2]/mᵈ
+            model.timestepper.Gⁿ.w[i, j, k] -= smoothing*F⃗ᴰ[3]/mᵈ
+        end
+    end
 end
 
 @inline function inside_cylinder(r⃗, r⃗⁻, rᵈ, i, j, k)
@@ -188,7 +197,7 @@ end
     nΔr⃗ᵐⁱⁿ = cross(Δr⃗, n⃗ - r⃗⁻)/sqrt(dot(Δr⃗, Δr⃗))
     rᵐⁱⁿ = sqrt(dot(nΔr⃗ᵐⁱⁿ, nΔr⃗ᵐⁱⁿ))
 
-    return rᵐⁱⁿ <= rᵈ
+    return rᵐⁱⁿ <= rᵈ, rᵐⁱⁿ
 end
 
 function drag_water!(model)
