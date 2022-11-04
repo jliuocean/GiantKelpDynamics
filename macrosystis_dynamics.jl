@@ -29,9 +29,10 @@ struct GiantKelp
     x
     y
     z
-    u₀
-    v₀
-    w₀
+
+    x₀
+    y₀
+    z₀
 
     #information about nodes
     nodes::Nodes
@@ -67,13 +68,14 @@ end
     mᵉ = (Vᵐ + params.Cᵃ*(Vᵐ + node.V⃗ᵖ[i]))*params.ρₒ
 
     u⃗ʷ = [interpolate.(values(model.velocities), x, y, z)...]
-    u⃗ᵣₑₗ = u⃗ʷ - [properties.u₀[p], properties.v₀[p], properties.w₀[p]] - node.u⃗[i, :]
+    u⃗ᵣₑₗ = u⃗ʷ - node.u⃗[i, :]
     sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
 
     a⃗ʷ = [interpolate.(values(model.timestepper.Gⁿ[(:u, :v, :w)]), x, y, z)...]
     a⃗ᵣₑₗ = a⃗ʷ - @inbounds node.F⃗[i, :]./mᵉ
 
-    Aˢ = @inbounds 2*node.r⃗ˢ[i]*l*sin(acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx))/(sᵣₑₗ*l))))
+    Aˢ = @inbounds 2*node.r⃗ˢ[i]*l*sin(acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx))/(sᵣₑₗ*l + eps(0.0)))))
+
     Fᴰ = .5*params.ρₒ*(params.Cᵈˢ*Aˢ + params.Cᵈᵇ*node.n⃗ᵇ[i]*node.A⃗ᵇ[i])*sᵣₑₗ.*u⃗ᵣₑₗ
 
     if i==length(node.l⃗₀)
@@ -127,14 +129,9 @@ end
 end
 
 function kelp_dynamics!(particles, model, Δt)
-    # for now, zero the base position and velocity
-    particles.properties.x .= model.grid.xᶜᵃᵃ[1]
-    particles.properties.y .= model.grid.yᵃᶜᵃ[8]
-    particles.properties.z .= model.grid.zᵃᵃᶜ[1]
-
-    particles.properties.u₀ .= 0.0
-    particles.properties.v₀ .= 0.0
-    particles.properties.w₀ .= 0.0
+    particles.properties.x .= particles.properties.x₀
+    particles.properties.y .= particles.properties.y₀
+    particles.properties.z .= particles.properties.z₀
 
     # calculate each particles node dynamics
     n_particles = length(particles)
@@ -163,11 +160,11 @@ end
     end
 
     # change to i, j, k
-    r⃗ = [fractional_indices(x⃗..., (Center(), Center(), Center()), model.grid)...]
-    r⃗⁻ = [fractional_indices(x⃗⁻..., (Center(), Center(), Center()), model.grid)...]
+    r⃗ = [fractional_indices(x⃗..., (Center(), Center(), Center()), model.grid)...].+1
+    r⃗⁻ = [fractional_indices(x⃗⁻..., (Center(), Center(), Center()), model.grid)...].+1
 
     # effective radius of drag in i,j, k units, wrong if inhomogeneous grid
-    rᵈ = node. r⃗ᵉ[i]/grid.Δxᶜᵃᵃ
+    rᵈ = node. r⃗ᵉ[i]/grid.Δyᵃᶜᵃ
 
     # work out how many points the drag is exerted on to get the mass to divide by
     mᵈ = 0.0
@@ -178,7 +175,7 @@ end
     # apply the drag to the tendencies 
     # Think I either have to itterate twice or have three new fields per node to add the tendencies to, and then divide by the mass after?
     F⃗ᴰ = node.F⃗ᴰ[i, :]
-    for i=1:grid.Nx, j=1:grid.Ny, k=1:grid.Nz if inside_cylinder(r⃗, r⃗⁻, rᵈ, i, j, k)
+    @inbounds for i=1:grid.Nx, j=1:grid.Ny, k=1:grid.Nz if inside_cylinder(r⃗, r⃗⁻, rᵈ, i, j, k)
         model.timestepper.Gⁿ.u[i, j, k] -= F⃗ᴰ[1]/mᵈ
         model.timestepper.Gⁿ.v[i, j, k] -= F⃗ᴰ[2]/mᵈ
         model.timestepper.Gⁿ.w[i, j, k] -= F⃗ᴰ[3]/mᵈ
@@ -194,7 +191,7 @@ end
     return rᵐⁱⁿ <= rᵈ
 end
 
-function drag_water!(model, Δt)
+function drag_water!(model)
     particles = model.particles
 
     # calculate each particles node dynamics
