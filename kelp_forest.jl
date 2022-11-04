@@ -4,18 +4,18 @@ using Oceananigans.Units: minutes, minute, hour, hours, day
 include("macrosystis_dynamics.jl")
 
 # ## Setup grid 
-Lx, Ly, Lz = 64, 4, 8
+Lx, Ly, Lz = 64, 8, 8
 Nx, Ny, Nz = 8 .*(Lx, Ly, Lz)
 grid = RectilinearGrid(size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
 
 # ## Setup kelp particles
-n_kelp = 1
+n_kelp = 8
 n_seg = 8
 Lₖₑₗₚ = 1.5*Lz
 l₀ = Lₖₑₗₚ/n_seg
 
-x = repeat([10.0], n_kelp)
-y = repeat([Ly/2], n_kelp)
+x = repeat([8+4*i for i=0:3], 2)
+y = [ifelse(i<=4, 2, 6) for i=1:8]
 z = repeat([0.125-Lz], n_kelp)
 
 const x₀ = repeat([10.0], n_kelp)
@@ -70,7 +70,7 @@ model = NonhydrostaticModel(; grid,
                                 particles=particles)
 set!(model, u=u₀)
 
-simulation = Simulation(model, Δt=0.5, stop_time=3minutes)
+simulation = Simulation(model, Δt=0.5, stop_time=5minutes)
 
 simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
@@ -82,7 +82,7 @@ progress_message(sim) = @printf("Iteration: %04d, time: %s, Δt: %s, max(|u|) = 
     
 simulation.callbacks[:progress] = Callback(progress_message, IterationInterval(20))
 
-filepath = "kelp_dragging"
+filepath = "forest"
 
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, model.velocities,
@@ -97,7 +97,7 @@ function store_particles!(sim)
 end
 
 simulation.callbacks[:save_particles] = Callback(store_particles!)
-run!(simulation)
+ #=run!(simulation)
 
 file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])
@@ -189,13 +189,13 @@ u_plt = u[1:Nx, 1:Ny, Nz, :] .-u₀
 uₘ = maximum(abs, u_plt)
 hmu = heatmap!(ax_u, grid.xᶠᵃᵃ[1:Nx], grid.yᵃᶜᵃ[1:Ny], u_plt[1:Nx, 1:Ny, 1], colormap=:vik, colorrange=(-uₘ, uₘ))
 Colorbar(fig[1, 2], hmu)
-scatter!(ax_u, x⃗[1, :, 1].+particles.properties.x[1], x⃗[1, :, 2].+particles.properties.y[1], color=:black, markersize=10)
-scatter!(ax_u, [particles.properties.x[1]], [particles.properties.y[1]], color=:black, markersize=10)
+scatter!(ax_u, x⃗[1, :, 1].+particles.properties.x[1], x⃗[1, :, 2].+particles.properties.y[1], color=:black, markersize=20)
+scatter!(ax_u, [particles.properties.x[1]], [particles.properties.y[1]], color=:black, markersize=20)
 
 record(fig, "horizontal_u.mp4", frame_iterator; framerate = framerate) do i
     msg = string("Plotting frame ", i, " of ", nframes)
     print(msg * " \r")
     hmu = heatmap!(ax_u, grid.xᶠᵃᵃ[1:Nx], grid.yᵃᶜᵃ[1:Ny], u_plt[1:Nx, 1:Ny, i], colormap=:vik, colorrange=(-uₘ, uₘ))
-    scatter!(ax_u, x⃗[i, :, 1].+particles.properties.x[1], x⃗[i, :, 2].+particles.properties.y[1], color=:black, markersize=10)
+    scatter!(ax_u, x⃗[i, :, 1].+particles.properties.x[1], x⃗[i, :, 2].+particles.properties.y[1], color=:black, markersize=20)
     ax_u.title = "t=$(prettytime(parse(Float64, times[i])))"
-end
+end=#
