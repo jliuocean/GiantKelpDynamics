@@ -4,7 +4,7 @@ using Oceananigans.Units: minutes, minute, hour, hours, day
 include("macrosystis_dynamics.jl")
 
 # ## Setup grid 
-Lx, Ly, Lz = 36, 3, 8
+Lx, Ly, Lz = 64, 4, 8
 Nx, Ny, Nz = 4 .*(Lx, Ly, Lz)
 grid = RectilinearGrid(size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
 
@@ -25,8 +25,7 @@ const z₀ = repeat([0.125-Lz], n_kelp)
 l⃗₀₀ = repeat([l₀], n_seg)
 r⃗ˢ₀ = repeat([0.03], n_seg)
 r⃗ᵉ₀ = repeat([0.5], n_seg)
-n⃗ᵇ₀ = repeat([0], n_seg)
-n⃗ᵇ₀[end] = 50
+n⃗ᵇ₀ = [i*50/n_seg for i = 1:n_seg]
 A⃗ᵇ₀ = repeat([0.1], n_seg)
 x⃗₀ = zeros(n_seg, 3)
 zᶜ = 0.0
@@ -71,7 +70,7 @@ model = NonhydrostaticModel(; grid,
                                 particles=particles)
 set!(model, u=u₀)
 
-simulation = Simulation(model, Δt=0.5, stop_time=2minutes)
+simulation = Simulation(model, Δt=0.5, stop_time=3minutes)
 
 simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
@@ -88,7 +87,7 @@ filepath = "kelp_dragging"
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, model.velocities,
                          filename = "$filepath.jld2",
-                         schedule = TimeInterval(10),
+                         schedule = IterationInterval(1),
                          overwrite_existing = true)
 
 function store_particles!(sim)
@@ -108,6 +107,7 @@ for (i, t) in enumerate(times)
 end
 
 using GLMakie
+#=
 fig = Figure(resolution = (1000*maximum(x⃗[:, :, 1])/maximum(x⃗[:, :, 3]), 1000))
 ax  = Axis(fig[1, 1]; limits=((min(0, minimum(x⃗[:, :, 1])), maximum(x⃗[:, :, 1])), (min(0, minimum(x⃗[:, :, 3])), maximum(x⃗[:, :, 3]))), xlabel="x (m)", ylabel="z (m)", title="t=$(prettytime(0))", aspect = AxisAspect(maximum(x⃗[:, :, 1])/maximum(x⃗[:, :, 3])))
 
@@ -124,7 +124,7 @@ record(fig, "nodes_dragging.mp4", frame_iterator; framerate = framerate) do i
     end
     plot!(ax, x⃗[i, :, 1], x⃗[i, :, 3])
     ax.title = "t=$(prettytime(parse(Float64, times[i])))"
-end
+end=#
 
 fig = Figure(resolution = (500*grid.Lx/grid.Lz, 500))
 ax_u  = Axis(fig[1, 1]; title = "u", aspect = AxisAspect(grid.Lx/grid.Lz), xlabel="x (m)", ylabel="z (m)")
@@ -153,3 +153,49 @@ lines!(ax_u, model.velocities.u[modf(fractional_x_index(25, Face(), grid))[2]+1,
 ax_v  = Axis(fig[2, 1]; title = "Horizontal profile at x=20m, z=0m", xlabel="y (m)", ylabel="u-u₀ (m/s)")
 lines!(ax_v, grid.yᵃᶜᵃ[1:Ny],  model.velocities.u[modf(fractional_x_index(20, Face(), grid))[2]+1, 1:Ny, Nz].-u₀)
 save("u_profiles.png", fig)
+
+u = FieldTimeSeries("$filepath.jld2", "u")
+u_plt = mean(u[1:Nx, 1:Ny, 1:Nz, :], dims=2)[:, 1, :, :].-u₀
+uₘ = maximum(abs, u_plt)
+
+fig = Figure(resolution = (500*grid.Lx/grid.Lz, 500))
+ax  = Axis(fig[1, 1]; aspect = AxisAspect(grid.Lx/grid.Lz), xlabel="x (m)", ylabel="z (m)")
+
+# animation settings
+nframes = length(times)
+framerate = floor(Int, nframes/30)
+frame_iterator = 1:nframes
+
+hmu = heatmap!(ax, grid.xᶠᵃᵃ[1:Nx], grid.zᵃᵃᶜ[1:Nz], u_plt[1:Nx, 1:Nz, 1], colormap=:vik, colorrange=(-uₘ, uₘ))
+Colorbar(fig[1, 2], hmu)
+scatter!(ax, [model.particles.properties.x[1]], [model.particles.properties.z[1]], color=:black, markersize=20)
+
+record(fig, "dragging.mp4", frame_iterator; framerate = framerate) do i
+    msg = string("Plotting frame ", i, " of ", nframes)
+    print(msg * " \r")
+
+    hmu = heatmap!(ax, grid.xᶠᵃᵃ[1:Nx], grid.zᵃᵃᶜ[1:Nz], u_plt[1:Nx, 1:Nz, i], colormap=:vik, colorrange=(-uₘ, uₘ))
+    if !(i==1)
+        scatter!(ax, x⃗[i-1, :, 1].+model.particles.properties.x[1], x⃗[i-1, :, 3].+model.particles.properties.z[1], color=:white, markersize=20)
+    end
+    scatter!(ax, x⃗[i, :, 1].+model.particles.properties.x[1], x⃗[i, :, 3].+model.particles.properties.z[1], color=:black, markersize=20)
+    ax.title = "t=$(prettytime(parse(Float64, times[i])))"
+end
+
+
+fig = Figure(resolution = (500*grid.Lx/grid.Ly, 500))
+ax_u  = Axis(fig[1, 1]; aspect = AxisAspect(grid.Lx/grid.Ly), xlabel="x (m)", ylabel="y (m)")
+u_plt = u[1:Nx, 1:Ny, Nz, :] .-u₀
+uₘ = maximum(abs, u_plt)
+hmu = heatmap!(ax_u, grid.xᶠᵃᵃ[1:Nx], grid.yᵃᶜᵃ[1:Ny], u_plt[1:Nx, 1:Ny, 1], colormap=:vik, colorrange=(-uₘ, uₘ))
+Colorbar(fig[1, 2], hmu)
+scatter!(ax_u, x⃗[i, :, 1].+model.particles.properties.x[1], x⃗[i, :, 2].+model.particles.properties.y[1], color=:black, markersize=20)
+scatter!(ax_u, [model.particles.properties.x[1]], [model.particles.properties.y[1]], color=:black, markersize=20)
+
+record(fig, "horizontal_u.mp4", frame_iterator; framerate = framerate) do i
+    msg = string("Plotting frame ", i, " of ", nframes)
+    print(msg * " \r")
+    hmu = heatmap!(ax_u, grid.xᶠᵃᵃ[1:Nx], grid.yᵃᶜᵃ[1:Ny], u_plt[1:Nx, 1:Ny, i], colormap=:vik, colorrange=(-uₘ, uₘ))
+    scatter!(ax_u, x⃗[i, :, 1].+model.particles.properties.x[1], x⃗[i, :, 2].+model.particles.properties.y[1], color=:black, markersize=20)
+    ax_u.title = "t=$(prettytime(parse(Float64, times[i])))"
+end
