@@ -4,18 +4,23 @@ using Oceananigans.Units: minutes, minute, hour, hours, day
 include("macrosystis_dynamics.jl")
 
 # ## Setup grid 
-grid = RectilinearGrid(size=(48, 16, 48), extent=(12, 4, 12), topology=(Bounded, Periodic, Bounded))
+grid = RectilinearGrid(size=(48, 16, 48), extent=(12, 4, 12), topology=(Periodic, Periodic, Bounded))
 
-u_bcs = FieldBoundaryConditions(top = FluxBoundaryCondition(0.0), bottom = ValueBoundaryCondition(0.0), east = OpenBoundaryCondition(1.0), west = OpenBoundaryCondition(1.0))
+#u_bcs = FieldBoundaryConditions(top = FluxBoundaryCondition(0.0), bottom = ValueBoundaryCondition(0.0), east = OpenBoundaryCondition(1.0), west = OpenBoundaryCondition(1.0))
+u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
+
+background_U(x, y, z, t) = ifelse(x <= 2, 0.15, 0.0)
+mask_U(x, y, z) = ifelse(x < 2, 1, 0)
+relax_U = Relaxation(1.0, mask_U, background_U)
 
 model = NonhydrostaticModel(; grid,
                             advection = WENO(),
                             timestepper = :RungeKutta3,
                             closure = ScalarDiffusivity(ν=1e-4, κ=1e-4),
-                            boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs))
-set!(model, u=1.0)
+                            boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
+                            forcing = (u = relax_U, ))
 
 simulation = Simulation(model, Δt=1.0, stop_time=2minutes)
 wizard = TimeStepWizard(cfl=1.0, max_change=1.1, max_Δt=10minutes, diffusive_cfl=0.5)
@@ -32,7 +37,7 @@ simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, merge(model.velocities, model.tracers),
                      filename = "$filepath.jld2",
                      indices = (:, grid.Ny/2, :),
-                     schedule = TimeInterval(10),
+                     schedule = IterationInterval(1),
                      overwrite_existing = true)
 
 run!(simulation)

@@ -5,7 +5,7 @@ include("macrosystis_dynamics.jl")
 
 # ## Setup grid 
 Lx, Ly, Lz = 36, 3, 8
-Nx, Ny, Nz = 8 .*(Lx, Ly, Lz)
+Nx, Ny, Nz = 4 .*(Lx, Ly, Lz)
 grid = RectilinearGrid(size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
 
 # ## Setup kelp particles
@@ -50,7 +50,7 @@ kelp_particles = StructArray{GiantKelp}((x, y, z, x₀, y₀, z₀, nodes))
 
 # here I am assuming the blades behave as streamers with aspect ratio approx 12 https://arc.aiaa.org/doi/pdf/10.2514/1.9754
 
-particles = LagrangianParticles(kelp_particles; dynamics=kelp_dynamics!, parameters=(k = 10^5, α = 1.41, ρₒ = 1026.0, ρₐ = 1.225, g = 9.81, Cᵈˢ = 1.0, Cᵈᵇ=0.4*12^(-0.485), Cᵃ = 3.0)) #α=1.41, k=2e5 ish for Utter/Denny
+particles = LagrangianParticles(kelp_particles; dynamics=kelp_dynamics!, parameters=(k = 10^5, α = 1.41, ρₒ = 1026.0, ρₐ = 1.225, g = 9.81, Cᵈˢ = 1.0, Cᵈᵇ=0.4*12^(-0.485), Cᵃ = 3.0)) 
 
 u₀=0.2
 
@@ -134,9 +134,9 @@ hmu = heatmap!(ax_u, grid.xᶠᵃᵃ[1:Nx], grid.zᵃᵃᶜ[1:Nz], u_plt, colorm
 Colorbar(fig[1, 2], hmu)
 scatter!(ax_u, model.particles.properties.nodes[1].x⃗[:, 1].+model.particles.properties.x[1], model.particles.properties.nodes[1].x⃗[:, 3].+model.particles.properties.z[1], color=:black, markersize=20)
 scatter!(ax_u, [model.particles.properties.x[1]], [model.particles.properties.z[1]], color=:black, markersize=20)
-save("u_velocity_slice.png", fig)
+save("vertical_u_slice.png", fig)
 
-pNz = Nz-1
+pNz = Nz
 fig = Figure(resolution = (500*grid.Lx/grid.Ly, 500))
 ax_u  = Axis(fig[1, 1]; title = "u", aspect = AxisAspect(grid.Lx/grid.Ly), xlabel="x (m)", ylabel="y (m)")
 u_plt = model.velocities.u[1:Nx, 1:Ny, pNz, end].-u₀
@@ -145,4 +145,11 @@ hmu = heatmap!(ax_u, grid.xᶠᵃᵃ[1:Nx], grid.yᵃᶜᵃ[1:Ny], u_plt, colorm
 Colorbar(fig[1, 2], hmu)
 scatter!(ax_u, model.particles.properties.nodes[1].x⃗[:, 1].+model.particles.properties.x[1], model.particles.properties.nodes[1].x⃗[:, 2].+model.particles.properties.y[1], color=:black, markersize=20)
 scatter!(ax_u, [model.particles.properties.x[1]], [model.particles.properties.y[1]], color=:black, markersize=20)
-save("u_velocity_profile.png", fig)
+save("horizontal_u_slice.png", fig)
+
+fig = Figure(resolution = (1000, 500))
+ax_u  = Axis(fig[1, 1]; title = "u", xlabel="x (m)", ylabel="z (m)")
+lines!(ax_u, model.velocities.u[modf(fractional_x_index(25, Face(), grid))[2]+1, floor(Int, Ny/2), 1:Nz]./mean(model.velocities.u[modf(fractional_x_index(25, Face(), grid))[2]+1, floor(Int, Ny/2), 1:Nz]), grid.zᵃᵃᶜ[1:Nz])
+ax_v  = Axis(fig[2, 1]; title = "Horizontal profile at x=20m, z=0m", xlabel="y (m)", ylabel="u-u₀ (m/s)")
+lines!(ax_v, grid.yᵃᶜᵃ[1:Ny],  model.velocities.u[modf(fractional_x_index(20, Face(), grid))[2]+1, 1:Ny, Nz].-u₀)
+save("u_profiles.png", fig)
