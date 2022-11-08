@@ -14,17 +14,17 @@ n_seg = 8
 Lₖₑₗₚ = 1.5*Lz
 l₀ = Lₖₑₗₚ/n_seg
 
-x = repeat([8+4*i for i=0:3], 2)
-y = [ifelse(i<=4, 2, 6) for i=1:8]
+x = repeat([8.0+4.0*i for i=0:3], 2)
+y = [ifelse(i<=4, 2.0, 6.0) for i=1:8]
 z = repeat([0.125-Lz], n_kelp)
 
-const x₀ = repeat([10.0], n_kelp)
-const y₀ = repeat([Ly/2], n_kelp)
+const x₀ = repeat([8.0+4.0*i for i=0:3], 2)
+const y₀ = [ifelse(i<=4, 2.0, 6.0) for i=1:8]
 const z₀ = repeat([0.125-Lz], n_kelp)
 
 l⃗₀₀ = repeat([l₀], n_seg)
 r⃗ˢ₀ = repeat([0.03], n_seg)
-r⃗ᵉ₀ = repeat([0.5], n_seg)
+r⃗ᵉ₀ = repeat([0.25], n_seg)
 n⃗ᵇ₀ = [i*50/n_seg for i = 1:n_seg]
 A⃗ᵇ₀ = repeat([0.1], n_seg)
 x⃗₀ = zeros(n_seg, 3)
@@ -43,7 +43,7 @@ V⃗ᵖ₀ = repeat([0.002], n_seg) # currently assuming pneumatocysts have dens
 individuals_nodes = Nodes(x⃗₀, u⃗₀, l⃗₀₀, r⃗ˢ₀, n⃗ᵇ₀, A⃗ᵇ₀, V⃗ᵖ₀, r⃗ᵉ₀, zeros(n_seg, 3), zeros(n_seg, 3), zeros(n_seg, 3), zeros(n_seg, 3))
 
 # this only works here where there is one particle (i.e. assumes all kelp have same base position)
-nodes = repeat([individuals_nodes], n_kelp)
+kelp_nodes = repeat([individuals_nodes], n_kelp)
 
 kelp_particles = StructArray{GiantKelp}((x, y, z, x₀, y₀, z₀, nodes))
 
@@ -58,16 +58,43 @@ v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
 
 background_U(x, y, z, t) = ifelse(x <= 5, u₀, 0.0)
-mask_U(x, y, z) = ifelse(x < 5, 1, 0)
-relax_U = Relaxation(1/2, mask_U, background_U)
+mask_rel(x, y, z) = ifelse(x < 5, 1, 0)
+relax_U = Relaxation(1/2, mask_rel, background_U)
+
+background_perp(x, y, z, t) = 0.0
+relax_perp = Relaxation(1/2, mask_rel, background_perp)
+
+
+using Oceananigans.BuoyancyModels: g_Earth
+
+amplitude = 1.0 # m
+period = 15.0 # s
+frequency = 1/period
+wavenumber = frequency^2/g_Earth
+wavelength = 2π/wavenumber
+
+# The vertical scale over which the Stokes drift of a monochromatic surface wave
+# decays away from the surface is `1/2wavenumber`, or
+const vertical_scale = wavelength / 4π
+
+# Stokes drift velocity at the surface
+const Uˢ = amplitude^2 * wavenumber * frequency # m s⁻¹
+uˢ(z) = Uˢ * exp(z / vertical_scale)
+∂z_uˢ(z, t) = 1 / vertical_scale * Uˢ * exp(z / vertical_scale)
+
+drag_weight = Oceananigans.CenterField(grid)
+drag_weights = repeat([drag_weight], n_kelp, n_seg)
+normalisations = repeat([1.0], n_kelp, n_seg)
 
 model = NonhydrostaticModel(; grid,
                                 advection = WENO(),
                                 timestepper = :RungeKutta3,
                                 closure = ScalarDiffusivity(ν=1e-4, κ=1e-4),
-                                #boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
-                                forcing = (u = relax_U, ),
-                                particles=particles)
+                                boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
+                                forcing = (u = relax_U, v = relax_perp, w = relax_perp),
+                                particles=particles,
+                                #stokes_drift = UniformStokesDrift(∂z_uˢ=∂z_uˢ),
+                                auxiliary_fields = (;drag_weights, normalisations))
 set!(model, u=u₀)
 
 simulation = Simulation(model, Δt=0.5, stop_time=5minutes)

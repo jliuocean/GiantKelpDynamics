@@ -2,8 +2,9 @@ using KernelAbstractions, LinearAlgebra
 using KernelAbstractions.Extras: @unroll
 using Oceananigans.Architectures: device, arch_array
 using Oceananigans.Fields: interpolate, fractional_x_index, fractional_y_index, fractional_z_index, fractional_indices
-const rk3 = ((8//15, nothing), (5//12, -17//60), (3//4, -5//12))
+using Oceananigans.Utils: work_layout
 
+const rk3 = ((8//15, nothing), (5//12, -17//60), (3//4, -5//12))
 
 # ## Create the particles
 struct Nodes
@@ -146,65 +147,92 @@ function kelp_dynamics!(particles, model, Δt)
     end
 end
 
-@kernel function drag_water_node!(properties, model, params)
-    p, i = @index(Global, NTuple)
+function segment_polar_frame(x, y, z, x⃗, x⃗⁻)
+    Δx⃗ = x⃗ - x⃗⁻
+    x⃗₀ = x⃗⁻ + Δx⃗./2
+    θ = atan(Δx⃗[2]/(Δx⃗[1]+eps(0.0)))
+    ϕ = atan(Δx⃗[3]/sqrt(Δx⃗[1]^2 + Δx⃗[2]^2+eps(0.0)))
+    Gˣʸ = LinearAlgebra.Givens(1, 2, cos(θ), sin(θ))
+    Gˣᶻ = LinearAlgebra.Givens(1, 3, cos(ϕ-π/2), sin(ϕ-π/2))
+
+    x⃗_node = @show Gˣᶻ*(Gˣʸ*([x, y, z] - x⃗₀))
+
+    r = sqrt(x⃗_node[1]^2 + x⃗_node[2]^2)
+
+    return r, x⃗_node[3]
+end
+
+@kernel function node_weights!(drag_weights, particles, grid, p, n, params)
+    i, j, k = @index(Global, NTuple)
 
     node = @inbounds properties.nodes[p]
 
     # get node positions
-    x⃗ = @inbounds node.x⃗[i, :] + [properties.x[p], properties.y[p], properties.z[p]]
+    x⃗ = @inbounds node.x⃗[n, :] + [properties.x[p], properties.y[p], properties.z[p]]
     if i==1
         x⃗⁻ = @inbounds [properties.x[p], properties.y[p], properties.z[p]]
     else
-        x⃗⁻ = @inbounds node.x⃗[i-1, :] + [properties.x[p], properties.y[p], properties.z[p]]
+        x⃗⁻ = @inbounds node.x⃗[n-1, :] + [properties.x[p], properties.y[p], properties.z[p]]
     end
+    Δx⃗ = x⃗ - x⃗⁻
+    x, y, z_ = Oceananigans.node(Center(), Center(), Center(), i, j, k, grid)
+    r, z = segment_polar_frame(x, y, z_, x⃗, x⃗⁻)
 
-    # change to i, j, k
-    r⃗ = [fractional_indices(x⃗..., (Center(), Center(), Center()), model.grid)...].+1
-    r⃗⁻ = [fractional_indices(x⃗⁻..., (Center(), Center(), Center()), model.grid)...].+1
-
-    # effective radius of drag in i,j, k units, wrong if inhomogeneous grid
-    rᵈ = node. r⃗ᵉ[i]/grid.Δyᵃᶜᵃ
-
-    # work out how many points the drag is exerted on to get the mass to divide by
-    mᵈ = 0.0
-    for i=1:grid.Nx, j=1:grid.Ny, k=1:grid.Nz if inside_cylinder(r⃗, r⃗⁻, rᵈ, i, j, k)
-        mᵈ += params.ρₒ*Oceananigans.Operators.Vᶜᶜᶜ(i, j, k, grid)
-    end end
-
-    # apply the drag to the tendencies 
-    # Think I either have to itterate twice or have three new fields per node to add the tendencies to, and then divide by the mass after?
-    F⃗ᴰ = node.F⃗ᴰ[i, :]
-    @inbounds for i=1:grid.Nx, j=1:grid.Ny, k=1:grid.Nz if inside_cylinder(r⃗, r⃗⁻, rᵈ, i, j, k)
-        model.timestepper.Gⁿ.u[i, j, k] -= F⃗ᴰ[1]/mᵈ
-        model.timestepper.Gⁿ.v[i, j, k] -= F⃗ᴰ[2]/mᵈ
-        model.timestepper.Gⁿ.w[i, j, k] -= F⃗ᴰ[3]/mᵈ
-    end end
+    rᵉ = @inbounds node. r⃗ᵉ[n]
+    l = sqrt(dot(Δx⃗, Δx⃗))
+    @inbounds drag_weights[p, n][i, j, k] = ifelse(r<4.746*rᵉ&abs(z)<l/2, exp(-r^2/(2*rᵉ^2)), 0.0)
 end
 
-@inline function inside_cylinder(r⃗, r⃗⁻, rᵈ, i, j, k)
-    n⃗ = [i, j, k]
-    Δr⃗ = r⃗⁻ - r⃗
-    nΔr⃗ᵐⁱⁿ = cross(Δr⃗, n⃗ - r⃗⁻)/sqrt(dot(Δr⃗, Δr⃗))
-    rᵐⁱⁿ = sqrt(dot(nΔr⃗ᵐⁱⁿ, nΔr⃗ᵐⁱⁿ))
+@kernel function calculate_normalisations!(drag_weights, weight_normalisations)
+    p, n = @index(Global, NTuple)
+    @inbounds weight_normalisations[n, p] = @inbounds sum(drag_weights[p, n])
+end
 
-    return rᵐⁱⁿ <= rᵈ
+@kernel function apply_drag!(Gᵘ, Gᵛ, Gʷ, drag_weights, normalisations, particles, p, n)
+    i, j, k = @index(Global, NTuple)
+
+    @inbounds begin
+        F⃗ᴰ = particles.properties.nodes[p].Fᴰ[n, :]
+        Gᵘ[i, j, k], Gᵛ[i, j, k], Gʷ[i, j, k] .+= F⃗ᴰ*drag_weights[p, n][i, j, k]/normalisations[p, n]
+    end
 end
 
 function drag_water!(model)
     particles = model.particles
+    Gᵘ, Gᵛ, Gʷ = model.timestepper.Gⁿ[(:u, :v, :w)]
+    drag_weights = model.auxiliary_fields.drag_weights
+    normalisations = model.auxiliary_fields.weight_normlisations
 
-    # calculate each particles node dynamics
-    n_particles = length(particles)
-    worksize = n_particles
-    workgroup = min(worksize, 256)
-    
+    workgroup, worksize = work_layout(grid, :xyz)
+    node_weights_kernel! = node_weights!(device(model.architecture), workgroup, worksize)
+
+    events = []
+
+    for p = 1:length(particles), n = 1:length(particles.properties.nodes[1].l⃗₀)
+        node_weights_event = node_weights_kernel!(drag_weights, particles, model.grid, p, n, particles.parameters)
+        push!(events, node_weights_event)
+    end
+
+    wait(device(model.architecture), MultiEvent(Tuple(events)))
+
     n_particles = length(particles)
     n_nodes = length(particles.properties.nodes[1].l⃗₀)
-    worksize = (n_particles, n_nodes)
-    workgroup = (1, min(256, worksize[1]))
+    worksize_p = (n_particles, n_nodes)
+    workgroup_p = (1, min(256, worksize[1]))
     
-    drag_kernel! = drag_water_node!(device(model.architecture), workgroup, worksize)
-    drag_event = drag_kernel!(particles.properties, model, particles.parameters)
-    wait(drag_event)
+    calculate_normalisations_kernel! = calculate_normalisations!(device(model.architecture), workgroup_p, worksize_p)
+
+    calculate_normalisations_event = calculate_normalisations_kernel!(drag_weights, normalisations)
+    wait(calculate_normalisations_event)
+
+    apply_drag_kernel! = apply_drag!(device(model.architecture), workgroup, worksize)
+
+    events = []
+
+    for p = 1:length(particles), n = 1:length(particles.properties.nodes[1].l⃗₀)
+        apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_weights, normalisations, particles, p, n)
+        push!(events, apply_drag_event)
+    end
+
+    wait(device(model.architecture), MultiEvent(Tuple(events)))
 end
