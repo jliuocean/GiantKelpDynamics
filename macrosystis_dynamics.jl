@@ -3,6 +3,7 @@ using KernelAbstractions.Extras: @unroll
 using Oceananigans.Architectures: device, arch_array
 using Oceananigans.Fields: interpolate, fractional_x_index, fractional_y_index, fractional_z_index, fractional_indices
 using Oceananigans.Utils: work_layout
+using Oceananigans.Operators: Vᶜᶜᶜ
 
 const rk3 = ((8//15, nothing), (5//12, -17//60), (3//4, -5//12))
 
@@ -155,7 +156,7 @@ function segment_polar_frame(x, y, z, x⃗, x⃗⁻)
     Gˣʸ = LinearAlgebra.Givens(1, 2, cos(θ), sin(θ))
     Gˣᶻ = LinearAlgebra.Givens(1, 3, cos(ϕ-π/2), sin(ϕ-π/2))
 
-    x⃗_node = @show Gˣᶻ*(Gˣʸ*([x, y, z] - x⃗₀))
+    x⃗_node = Gˣᶻ*(Gˣʸ*([x, y, z] - x⃗₀))
 
     r = sqrt(x⃗_node[1]^2 + x⃗_node[2]^2)
 
@@ -165,11 +166,12 @@ end
 @kernel function node_weights!(drag_weights, particles, grid, p, n, params)
     i, j, k = @index(Global, NTuple)
 
+    properties = particles.properties
     node = @inbounds properties.nodes[p]
 
     # get node positions
     x⃗ = @inbounds node.x⃗[n, :] + [properties.x[p], properties.y[p], properties.z[p]]
-    if i==1
+    if n==1
         x⃗⁻ = @inbounds [properties.x[p], properties.y[p], properties.z[p]]
     else
         x⃗⁻ = @inbounds node.x⃗[n-1, :] + [properties.x[p], properties.y[p], properties.z[p]]
@@ -180,20 +182,23 @@ end
 
     rᵉ = @inbounds node. r⃗ᵉ[n]
     l = sqrt(dot(Δx⃗, Δx⃗))
-    @inbounds drag_weights[p, n][i, j, k] = ifelse(r<4.746*rᵉ&abs(z)<l/2, exp(-r^2/(2*rᵉ^2)), 0.0)
+    @inbounds drag_weights[p, n][i, j, k] = ifelse((r<4.746*rᵉ)&(abs(z)<l/2), exp(-r^2/(2*rᵉ^2)), 0.0)
 end
 
 @kernel function calculate_normalisations!(drag_weights, weight_normalisations)
     p, n = @index(Global, NTuple)
-    @inbounds weight_normalisations[n, p] = @inbounds sum(drag_weights[p, n])
+    @inbounds weight_normalisations[p, n] = @inbounds sum(drag_weights[p, n])
 end
 
-@kernel function apply_drag!(Gᵘ, Gᵛ, Gʷ, drag_weights, normalisations, particles, p, n)
+@kernel function apply_drag!(Gᵘ, Gᵛ, Gʷ, drag_weights, normalisations, particles, grid, p, n)
     i, j, k = @index(Global, NTuple)
 
+    vol = Vᶜᶜᶜ(i, j, k, grid)
     @inbounds begin
-        F⃗ᴰ = particles.properties.nodes[p].Fᴰ[n, :]
-        Gᵘ[i, j, k], Gᵛ[i, j, k], Gʷ[i, j, k] .+= F⃗ᴰ*drag_weights[p, n][i, j, k]/normalisations[p, n]
+        F⃗ᴰ = particles.properties.nodes[p].F⃗ᴰ[n, :]
+        Gᵘ[i, j, k] += F⃗ᴰ[1]*drag_weights[p, n][i, j, k]/(normalisations[p, n]*vol)
+        Gᵛ[i, j, k] += F⃗ᴰ[2]*drag_weights[p, n][i, j, k]/(normalisations[p, n]*vol)
+        Gʷ[i, j, k] += F⃗ᴰ[3]*drag_weights[p, n][i, j, k]/(normalisations[p, n]*vol)
     end
 end
 
@@ -201,7 +206,7 @@ function drag_water!(model)
     particles = model.particles
     Gᵘ, Gᵛ, Gʷ = model.timestepper.Gⁿ[(:u, :v, :w)]
     drag_weights = model.auxiliary_fields.drag_weights
-    normalisations = model.auxiliary_fields.weight_normlisations
+    normalisations = model.auxiliary_fields.drag_weight_normlisations
 
     workgroup, worksize = work_layout(grid, :xyz)
     node_weights_kernel! = node_weights!(device(model.architecture), workgroup, worksize)
@@ -230,7 +235,7 @@ function drag_water!(model)
     events = []
 
     for p = 1:length(particles), n = 1:length(particles.properties.nodes[1].l⃗₀)
-        apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_weights, normalisations, particles, p, n)
+        apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_weights, normalisations, particles, grid, p, n)
         push!(events, apply_drag_event)
     end
 

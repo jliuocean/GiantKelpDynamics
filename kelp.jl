@@ -15,17 +15,17 @@ Lₖₑₗₚ = 1.5*Lz
 l₀ = Lₖₑₗₚ/n_seg
 
 x = [8.0]#repeat([8.0+4.0*i for i=0:3], 2)
-y = [4]#[ifelse(i<=4, 2.0, 6.0) for i=1:8]
+y = [4.0]#[ifelse(i<=4, 2.0, 6.0) for i=1:8]
 z = repeat([0.125-Lz], n_kelp)
 
 const x₀ =  [8.0]#repeat([8.0+4.0*i for i=0:3], 2)
-const y₀ = [4]#[ifelse(i<=4, 2.0, 6.0) for i=1:8]
+const y₀ = [4.0]#[ifelse(i<=4, 2.0, 6.0) for i=1:8]
 const z₀ = repeat([0.125-Lz], n_kelp)
 
 l⃗₀₀ = repeat([l₀], n_seg)
 r⃗ˢ₀ = repeat([0.03], n_seg)
 r⃗ᵉ₀ = repeat([0.25], n_seg)
-n⃗ᵇ₀ = [i*50/n_seg for i = 1:n_seg]
+n⃗ᵇ₀ = [i*50.0/n_seg for i = 1:n_seg]
 A⃗ᵇ₀ = repeat([0.1], n_seg)
 x⃗₀ = zeros(n_seg, 3)
 zᶜ = 0.0
@@ -84,7 +84,7 @@ uˢ(z) = Uˢ * exp(z / vertical_scale)
 
 drag_weight = Oceananigans.CenterField(grid)
 drag_weights = repeat([drag_weight], n_kelp, n_seg)
-normalisations = repeat([1.0], n_kelp, n_seg)
+drag_weight_normlisations = repeat([1.0], n_kelp, n_seg)
 
 model = NonhydrostaticModel(; grid,
                                 advection = WENO(),
@@ -94,10 +94,10 @@ model = NonhydrostaticModel(; grid,
                                 forcing = (u = relax_U, v = relax_perp, w = relax_perp),
                                 particles=particles,
                                 #stokes_drift = UniformStokesDrift(∂z_uˢ=∂z_uˢ),
-                                auxiliary_fields = (;drag_weights, normalisations))
+                                auxiliary_fields = (;drag_weights, drag_weight_normlisations))
 set!(model, u=u₀)
 
-simulation = Simulation(model, Δt=0.5, stop_time=5minutes)
+simulation = Simulation(model, Δt=0.1, stop_time=5minutes)
 
 simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
@@ -109,7 +109,7 @@ progress_message(sim) = @printf("Iteration: %04d, time: %s, Δt: %s, max(|u|) = 
     
 simulation.callbacks[:progress] = Callback(progress_message, IterationInterval(20))
 
-filepath = "forest"
+filepath = "dragging"
 
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, model.velocities,
@@ -124,8 +124,8 @@ function store_particles!(sim)
 end
 
 simulation.callbacks[:save_particles] = Callback(store_particles!)
- #=run!(simulation)
-
+ run!(simulation)
+#=
 file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])
 x⃗ = zeros(length(times), n_seg, 3)
