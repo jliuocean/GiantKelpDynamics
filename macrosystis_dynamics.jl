@@ -66,7 +66,7 @@ end
         Fᴮ[3] = 0.0
     end
 
-    Vᵐ = π*node.r⃗ˢ[i]*node.r⃗ˢ[i] + node.A⃗ᵇ[i]*0.01 # TODO: change thickness to some realistic thing
+    Vᵐ = π*node.r⃗ˢ[i]^2*l + node.n⃗ᵇ[i]*node.A⃗ᵇ[i]*0.01 # TODO: change thickness to some realistic thing
     mᵉ = (Vᵐ + params.Cᵃ*(Vᵐ + node.V⃗ᵖ[i]))*params.ρₒ
 
     u⃗ʷ = [interpolate.(values(model.velocities), x, y, z)...]

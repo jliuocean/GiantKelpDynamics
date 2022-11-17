@@ -9,47 +9,55 @@ Nx, Ny, Nz = 2 .*(Lx, Ly, Lz)
 grid = RectilinearGrid(size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
 
 # ## Setup kelp particles
-n_kelp = 1
-n_seg = 8
-Lₖₑₗₚ = 1.5*Lz
-l₀ = Lₖₑₗₚ/n_seg
 
-x = [8.0]#repeat([8.0+4.0*i for i=0:3], 2)
-y = [4.0]#[ifelse(i<=4, 2.0, 6.0) for i=1:8]
-z = repeat([0.125-Lz], n_kelp)
-
-const x₀ =  [8.0]#repeat([8.0+4.0*i for i=0:3], 2)
-const y₀ = [4.0]#[ifelse(i<=4, 2.0, 6.0) for i=1:8]
-const z₀ = repeat([0.125-Lz], n_kelp)
-
-l⃗₀₀ = repeat([l₀], n_seg)
-r⃗ˢ₀ = repeat([0.03], n_seg)
-r⃗ᵉ₀ = repeat([0.25], n_seg)
-n⃗ᵇ₀ = [i*50.0/n_seg for i = 1:n_seg]
-A⃗ᵇ₀ = repeat([0.1], n_seg)
-x⃗₀ = zeros(n_seg, 3)
+x⃗₀ = zeros(8, 3)
 zᶜ = 0.0
-for i=1:n_seg
-    global zᶜ += l⃗₀₀[i]
-    if zᶜ+z₀[1] < 0
+for i=1:8
+    global zᶜ += 12/8
+    if zᶜ - 8.0 < 0
         x⃗₀[i, :] = [0.0, 0.0, zᶜ]
     else
-        x⃗₀[i, :] = [zᶜ+z₀[1], 0.0, -z₀[1]]
+        x⃗₀[i, :] = [zᶜ - 8, 0.0, 8.0]
     end
 end
-u⃗₀ = zeros(n_seg, 3)
-V⃗ᵖ₀ = repeat([0.002], n_seg) # currently assuming pneumatocysts have density 500kg/m³
 
-individuals_nodes = Nodes(x⃗₀, u⃗₀, l⃗₀₀, r⃗ˢ₀, n⃗ᵇ₀, A⃗ᵇ₀, V⃗ᵖ₀, r⃗ᵉ₀, zeros(n_seg, 3), zeros(n_seg, 3), zeros(n_seg, 3), zeros(n_seg, 3))
+n⃗ᵇ = [i*50/8 for i = 1:8]
+A⃗ᵇ = repeat([0.1], 8)
 
-# this only works here where there is one particle (i.e. assumes all kelp have same base position)
-kelp_nodes = repeat([individuals_nodes], n_kelp)
+nodes = Nodes(x⃗₀, 
+              zeros(8, 3), 
+              repeat([12/8], 8), 
+              repeat([0.03], 8), 
+              n⃗ᵇ, 
+              A⃗ᵇ, 
+              repeat([0.003], 8), 
+              repeat([1.0], 8), 
+              zeros(8, 3), 
+              zeros(8, 3), 
+              zeros(8, 3), 
+              zeros(8, 3))
 
-kelp_particles = StructArray{GiantKelp}((x, y, z, x₀, y₀, z₀, kelp_nodes))
+particle_struct = StructArray{GiantKelp}(([12.0], [0.0], [-8.0], [4.0], [4.0], [-8.0], [nodes]))
 
-# here I am assuming the blades behave as streamers with aspect ratio approx 12 https://arc.aiaa.org/doi/pdf/10.2514/1.9754
+function guassian_smoothing(r, z, rᵉ)
+    if z>0
+        r = sqrt(r^2 + z^2)
+    end
 
-particles = LagrangianParticles(kelp_particles; dynamics=kelp_dynamics!, parameters=(k = 10^5, α = 1.41, ρₒ = 1026.0, ρₐ = 1.225, g = 9.81, Cᵈˢ = 1.0, Cᵈᵇ=0.4*12^(-0.485), Cᵃ = 3.0)) 
+    return exp(-(7*r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
+end
+
+particles = LagrangianParticles(particle_struct; 
+                            dynamics = kelp_dynamics!, 
+                            parameters = (k = 10^5, 
+                                          α = 1.41, 
+                                          ρₒ = 1026.0, 
+                                          ρₐ = 1.225, 
+                                          g = 9.81, 
+                                          Cᵈˢ = 1.0, 
+                                          Cᵈᵇ=0.4*12^(-0.485), 
+                                          Cᵃ = 3.0,
+                                          drag_smoothing = guassian_smoothing))
 
 u₀=0.2
 
@@ -57,7 +65,7 @@ u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
 
-background_U(x, y, z, t) = ifelse(x <= 5, u₀, 0.0)
+background_U(x, y, z, t) = ifelse(x <= 8, u₀, 0.0)
 mask_rel(x, y, z) = ifelse(x < 5, 1, 0)
 relax_U = Relaxation(1/2, mask_rel, background_U)
 
@@ -65,26 +73,8 @@ background_perp(x, y, z, t) = 0.0
 relax_perp = Relaxation(1/2, mask_rel, background_perp)
 
 
-using Oceananigans.BuoyancyModels: g_Earth
-
-amplitude = 1.0 # m
-period = 15.0 # s
-frequency = 1/period
-wavenumber = frequency^2/g_Earth
-wavelength = 2π/wavenumber
-
-# The vertical scale over which the Stokes drift of a monochromatic surface wave
-# decays away from the surface is `1/2wavenumber`, or
-const vertical_scale = wavelength / 4π
-
-# Stokes drift velocity at the surface
-const Uˢ = amplitude^2 * wavenumber * frequency # m s⁻¹
-uˢ(z) = Uˢ * exp(z / vertical_scale)
-∂z_uˢ(z, t) = 1 / vertical_scale * Uˢ * exp(z / vertical_scale)
-
-drag_weight = Oceananigans.CenterField(grid)
-drag_weights = repeat([drag_weight], n_kelp, n_seg)
-drag_weight_normlisations = repeat([1.0], n_kelp, n_seg)
+drag_nodes = repeat([CenterField(grid)], 1, 8)
+drag_normalisation = repeat([Inf], 1, 8)
 
 model = NonhydrostaticModel(; grid,
                                 advection = WENO(),
@@ -92,17 +82,17 @@ model = NonhydrostaticModel(; grid,
                                 closure = ScalarDiffusivity(ν=1e-4, κ=1e-4),
                                 boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
                                 forcing = (u = relax_U, v = relax_perp, w = relax_perp),
-                                particles=particles,
-                                #stokes_drift = UniformStokesDrift(∂z_uˢ=∂z_uˢ),
-                                auxiliary_fields = (;drag_weights, drag_weight_normlisations))
+                                particles = particles,
+                                auxiliary_fields = (; drag_nodes, drag_normalisation))
 set!(model, u=u₀)
 
-simulation = Simulation(model, Δt=0.1, stop_time=5minutes)
+simulation = Simulation(model, Δt=0.02, stop_time=5minutes)
 
 simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
 wizard = TimeStepWizard(cfl=1.0, max_change=1.1, max_Δt=0.25, diffusive_cfl=0.5)
 #simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
+
 progress_message(sim) = @printf("Iteration: %04d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, wall time: %s\n",
                                     iteration(sim), prettytime(sim), prettytime(sim.Δt),
                                     maximum(abs, sim.model.velocities.u), prettytime(sim.run_wall_time))
@@ -124,7 +114,8 @@ function store_particles!(sim)
 end
 
 simulation.callbacks[:save_particles] = Callback(store_particles!)
- run!(simulation)
+run!(simulation)
+
 #=
 file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])
