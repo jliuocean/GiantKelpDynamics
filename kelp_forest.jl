@@ -18,8 +18,8 @@ x = repeat([8.0+4.0*i for i=0:3], 2)
 y = [ifelse(i<=4, 2.0, 6.0) for i=1:8]
 z = repeat([0.125-Lz], n_kelp)
 
-const x₀ = repeat([8.0+4.0*i for i=0:3], 2)
-const y₀ = [ifelse(i<=4, 2.0, 6.0) for i=1:8]
+const x₀ = repeat([8+4*i for i=0:3], 2)
+const y₀ = [ifelse(i<=4, 2, 6) for i=1:8]
 const z₀ = repeat([0.125-Lz], n_kelp)
 
 l⃗₀₀ = repeat([l₀], n_seg)
@@ -124,8 +124,8 @@ function store_particles!(sim)
 end
 
 simulation.callbacks[:save_particles] = Callback(store_particles!)
- #=run!(simulation)
-
+run!(simulation)
+#=
 file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])
 x⃗ = zeros(length(times), n_seg, 3)
