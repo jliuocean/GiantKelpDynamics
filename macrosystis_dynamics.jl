@@ -163,7 +163,7 @@ function segment_polar_frame(x, y, z, x⃗, x⃗⁻)
     return r, x⃗_node[3]
 end
 
-@kernel function node_weights!(drag_weights, particles, grid, p, n, params)
+@kernel function node_weights!(drag_nodes, particles, grid, p, n, params)
     i, j, k = @index(Global, NTuple)
 
     properties = particles.properties
@@ -182,31 +182,31 @@ end
 
     rᵉ = @inbounds node. r⃗ᵉ[n]
     l = sqrt(dot(Δx⃗, Δx⃗))
-    @inbounds drag_weights[p, n][i, j, k] = ifelse((r<4.746*rᵉ)&(abs(z)<l/2), exp(-r^2/(2*rᵉ^2)), 0.0)
+    @inbounds drag_nodes[p, n][i, j, k] = ifelse((r<rᵉ)&(abs(z)<l/2), 1, 0.0)#ifelse((r<4.746*rᵉ)&(abs(z)<l/2), exp(-r^2/(2*rᵉ^2)), 0.0)
 end
 
-@kernel function calculate_normalisations!(drag_weights, weight_normalisations)
+@kernel function calculate_normalisations!(drag_nodes, weight_normalisations)
     p, n = @index(Global, NTuple)
-    @inbounds weight_normalisations[p, n] = @inbounds sum(drag_weights[p, n])
+    @inbounds weight_normalisations[p, n] = @inbounds sum(drag_nodes[p, n])
 end
 
-@kernel function apply_drag!(Gᵘ, Gᵛ, Gʷ, drag_weights, normalisations, particles, grid, p, n)
+@kernel function apply_drag!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisations, particles, grid, p, n)
     i, j, k = @index(Global, NTuple)
 
     vol = Vᶜᶜᶜ(i, j, k, grid)
     @inbounds begin
         F⃗ᴰ = particles.properties.nodes[p].F⃗ᴰ[n, :]
-        Gᵘ[i, j, k] += F⃗ᴰ[1]*drag_weights[p, n][i, j, k]/(normalisations[p, n]*vol)
-        Gᵛ[i, j, k] += F⃗ᴰ[2]*drag_weights[p, n][i, j, k]/(normalisations[p, n]*vol)
-        Gʷ[i, j, k] += F⃗ᴰ[3]*drag_weights[p, n][i, j, k]/(normalisations[p, n]*vol)
+        Gᵘ[i, j, k] -= F⃗ᴰ[1]*drag_nodes[p, n][i, j, k]/(normalisations[p, n]*vol*particles.parameters.ρₒ)
+        Gᵛ[i, j, k] -= F⃗ᴰ[2]*drag_nodes[p, n][i, j, k]/(normalisations[p, n]*vol*particles.parameters.ρₒ)
+        Gʷ[i, j, k] -= F⃗ᴰ[3]*drag_nodes[p, n][i, j, k]/(normalisations[p, n]*vol*particles.parameters.ρₒ)
     end
 end
 
 function drag_water!(model)
     particles = model.particles
     Gᵘ, Gᵛ, Gʷ = model.timestepper.Gⁿ[(:u, :v, :w)]
-    drag_weights = model.auxiliary_fields.drag_weights
-    normalisations = model.auxiliary_fields.drag_weight_normlisations
+    drag_nodes = model.auxiliary_fields.drag_nodes
+    normalisations = model.auxiliary_fields.drag_normalisation
 
     workgroup, worksize = work_layout(grid, :xyz)
     node_weights_kernel! = node_weights!(device(model.architecture), workgroup, worksize)
@@ -214,7 +214,7 @@ function drag_water!(model)
     events = []
 
     for p = 1:length(particles), n = 1:length(particles.properties.nodes[1].l⃗₀)
-        node_weights_event = node_weights_kernel!(drag_weights, particles, model.grid, p, n, particles.parameters)
+        node_weights_event = node_weights_kernel!(drag_nodes, particles, model.grid, p, n, particles.parameters)
         push!(events, node_weights_event)
     end
 
@@ -227,7 +227,7 @@ function drag_water!(model)
     
     calculate_normalisations_kernel! = calculate_normalisations!(device(model.architecture), workgroup_p, worksize_p)
 
-    calculate_normalisations_event = calculate_normalisations_kernel!(drag_weights, normalisations)
+    calculate_normalisations_event = calculate_normalisations_kernel!(drag_nodes, normalisations)
     wait(calculate_normalisations_event)
 
     apply_drag_kernel! = apply_drag!(device(model.architecture), workgroup, worksize)
@@ -235,7 +235,7 @@ function drag_water!(model)
     events = []
 
     for p = 1:length(particles), n = 1:length(particles.properties.nodes[1].l⃗₀)
-        apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_weights, normalisations, particles, grid, p, n)
+        apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisations, particles, grid, p, n)
         push!(events, apply_drag_event)
     end
 
