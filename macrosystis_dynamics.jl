@@ -182,7 +182,7 @@ end
 
     rᵉ = @inbounds node. r⃗ᵉ[n]
     l = sqrt(dot(Δx⃗, Δx⃗))
-    @inbounds drag_nodes[p, n][i, j, k] = ifelse((r<rᵉ)&(abs(z)<l/2), 1, 0.0)#ifelse((r<4.746*rᵉ)&(abs(z)<l/2), exp(-r^2/(2*rᵉ^2)), 0.0)
+    @inbounds drag_nodes[p, n][i, j, k] = ifelse((r<rᵉ)&(abs(z)<l/2+rᵉ), particles.parameters.drag_smoothing(r, abs(z)-l/2, rᵉ), 0.0)#ifelse((r<4.746*rᵉ)&(abs(z)<l/2), exp(-r^2/(2*rᵉ^2)), 0.0)
 end
 
 @kernel function calculate_normalisations!(drag_nodes, weight_normalisations)
