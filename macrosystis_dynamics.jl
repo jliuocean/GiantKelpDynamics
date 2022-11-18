@@ -116,13 +116,13 @@ end
         if any(isnan.(node.F⃗[i, :])) error("F is NaN: i=$i $(Fᴮ) .+ $(Fᴰ) .+ $(T⁻) .+ $(T⁺) at $x, $y, $z") end
 
         # Think its possibly reassigning the same values on top of eachother?
-        node.u⃗⁻[i, :] = node.u⃗[i, :]
-        node.u⃗[i, :] += rk3_substep(node.F⃗[i, :], node.F⃗⁻[i, :], Δt, γ, ζ)
-        #node.u⃗[i, :] += node.F⃗[i, :]*Δt
-        node.F⃗⁻[i, :] = node.F⃗[i, :]
+        #node.u⃗⁻[i, :] = node.u⃗[i, :]
+        #node.u⃗[i, :] += rk3_substep(node.F⃗[i, :], node.F⃗⁻[i, :], Δt, γ, ζ)
+        node.u⃗[i, :] += node.F⃗[i, :]*Δt
+        #node.F⃗⁻[i, :] = node.F⃗[i, :]
 
-        node.x⃗[i, :] += rk3_substep(node.u⃗[i, :], node.u⃗⁻[i, :], Δt, γ, ζ)
-        #node.x⃗[i, :] += node.u⃗[i, :]*Δt
+        #node.x⃗[i, :] += rk3_substep(node.u⃗[i, :], node.u⃗⁻[i, :], Δt, γ, ζ)
+        node.x⃗[i, :] += node.u⃗[i, :]*Δt
 
         if node.x⃗[i, 3] + properties.z[p] > 0.0 #given above bouyancy conditions this should never be possible (assuming a flow with zero vertical velocity at the surface, i.e. a real one)
             node.x⃗[i, 3] = -properties.z[p]
