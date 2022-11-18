@@ -60,7 +60,7 @@ end
 
     Δx = x⃗ - x⃗⁻
 
-    x, y, z = @inbounds [properties.x[p], properties.y[p], properties.z[p]] + x⃗ - Δx./2
+    x, y, z = @inbounds [properties.x[p], properties.y[p], properties.z[p]] + x⃗
 
     l = sqrt(dot(Δx, Δx))
 
@@ -170,7 +170,7 @@ end
     return LocalTransform(x⃗₀, R₁, R₂)
 end
 
-@kernel function node_weights!(drag_nodes, particles, grid,  rᵉ, l, polar_transform, n)
+@kernel function node_weights!(drag_nodes, particles, grid, rᵉ, l⁺, l⁻, polar_transform, n)
     i, j, k = @index(Global, NTuple)
 
     x, y, z = Oceananigans.node(Center(), Center(), Center(), i, j, k, grid)
@@ -179,11 +179,11 @@ end
     r = sqrt(x_^2+y_^2)
     # if the last segment exerted a force here then don't exert the force here
     # questionable but ???
-    if n == 1 || @inbounds drag_nodes[i, j, k] == 0
-        @inbounds drag_nodes[i, j, k] = ifelse((r<rᵉ)&(abs(z_)<l/2+rᵉ), particles.parameters.drag_smoothing(r, abs(z_)-l/2, rᵉ), 0.0)
-    else
-        @inbounds drag_nodes[i, j, k] = 0.0
-    end
+    #if n == 1 || @inbounds drag_nodes[i, j, k] == 0
+        @inbounds drag_nodes[i, j, k] = ifelse((r<rᵉ)&(-l⁻-rᵉ<z_<l⁺+rᵉ), particles.parameters.drag_smoothing(r, abs(z_)-ifelse(z > 0, l⁺, l⁻), rᵉ), 0.0)
+    #else
+    #    @inbounds drag_nodes[i, j, k] = 0.0
+    #end
 end
 
 @kernel function apply_drag!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisations, particles, grid, F⃗ᴰ)
@@ -208,7 +208,8 @@ function drag_water!(model)
     node_weights_kernel! = node_weights!(device(model.architecture), workgroup, worksize)
     apply_drag_kernel! = apply_drag!(device(model.architecture), workgroup, worksize)
 
-    for p = 1:length(particles), n = 1:length(particles.properties.nodes[1].l⃗₀)
+    n_nodes = length(particles.properties.nodes[1].l⃗₀)
+    for p in 1:length(particles), n in 1:n_nodes
         properties = particles.properties
         node = @inbounds properties.nodes[p]
 
@@ -220,18 +221,35 @@ function drag_water!(model)
             else
                 x⃗⁻ = node.x⃗[n-1, :] + [properties.x[p], properties.y[p], properties.z[p]]
             end
+
+            if n==n_nodes
+                x⃗⁺ = x⃗
+            else
+                x⃗⁺ = node.x⃗[n+1, :] + [properties.x[p], properties.y[p], properties.z[p]]
+            end
         end
 
         rᵉ = @inbounds node.r⃗ᵉ[n]
 
-        Δx⃗ = x⃗ - x⃗⁻
-        l = sqrt(dot(Δx⃗, Δx⃗))
+        Δx⃗ = x⃗⁺ - x⃗⁻
+        
+        if n==1
+            l⁻ = sqrt(dot(node.x⃗[n, :], node.x⃗[n, :]))
+        else
+            l⁻ = sqrt(dot(node.x⃗[n, :] - node.x⃗[n-1, :], node.x⃗[n, :] - node.x⃗[n-1, :]))/2
+        end
+    
+            
+        if n==n_nodes
+            l⁺ = sqrt(dot(node.x⃗[n, :] - node.x⃗[n-1, :], node.x⃗[n, :] - node.x⃗[n-1, :]))/2
+        else
+            l⁺ = sqrt(dot(node.x⃗[n+1, :] - node.x⃗[n, :], node.x⃗[n+1, :] - node.x⃗[n, :]))/2
+        end
 
-        x⃗₀ = x⃗⁻ + Δx⃗./2
         θ = atan(Δx⃗[2]/(Δx⃗[1]+eps(0.0))) + π*0^(1 + sign(Δx⃗[1]))
         ϕ = atan(sqrt(Δx⃗[1]^2 + Δx⃗[2]^2+eps(0.0))/Δx⃗[3])
 
-        node_weights_event = node_weights_kernel!(drag_nodes, particles, model.grid, rᵉ, l, LocalTransform(θ, ϕ, x⃗₀), n)
+        node_weights_event = node_weights_kernel!(drag_nodes, particles, model.grid, rᵉ, l⁺, l⁻, LocalTransform(θ, ϕ, x⃗), n)
         wait(node_weights_event)
 
         normalisation = sum(drag_nodes)

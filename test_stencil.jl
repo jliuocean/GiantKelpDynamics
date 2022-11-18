@@ -3,15 +3,15 @@ using Oceananigans.Units
 
 include("macrosystis_dynamics.jl")
 
-nodes = Nodes([0.0 0.0 2.0; -2.0 0.0 4.0], zeros(2, 3), [2.0; 2.0], [0.03; 0.03], zeros(Int64, 2), zeros(2), [0.002; 0.002], [1.0, 1.0], zeros(2, 3), zeros(2, 3), zeros(2, 3), zeros(2, 3))
+nodes = Nodes([0.0 0.0 2.0; -2.0 0.0 4.0], zeros(2, 3), [2.0; 2.0], [0.03; 0.03], zeros(Int64, 2), zeros(2), [0.002; 0.002], [0.5, 0.5], zeros(2, 3), zeros(2, 3), zeros(2, 3), zeros(2, 3))
 particle_struct = StructArray{GiantKelp}(([4.0], [4.0], [-8.0], [4.0], [4.0], [-8.0], [nodes]))
 
 function guassian_smoothing(r, z, rᵉ)
     if z>0
         r = sqrt(r^2 + z^2)
-        return 0.0#exp(-(7*r)^2/(2*rᵉ^2))/(2*sqrt(2*π*rᵉ^2))
+        return exp(-(3*r)^2/(2*rᵉ^2))/(2*sqrt(2*π*rᵉ^2))
     else
-        return exp(-(7*r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
+        return exp(-(3*r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
     end
 end
 
@@ -36,11 +36,11 @@ drag_nodes = CenterField(grid)
 model = NonhydrostaticModel(;grid, particles, auxiliary_fields = (; drag_nodes))
 
 set!(model, u=0.15)
-
+#=
 drag_water_callback = Callback(drag_water!; callsite = TendencyCallsite())
 
 simulation = Simulation(model, Δt=0.05, stop_time=1minutes)
 
 simulation.callbacks[:drag_water] = drag_water_callback
 
-run!(simulation)
+run!(simulation)=#

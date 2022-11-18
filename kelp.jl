@@ -10,7 +10,7 @@ grid = RectilinearGrid(size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodi
 
 # ## Setup kelp particles
 
-#=x⃗₀ = zeros(8, 3)
+x⃗₀ = zeros(8, 3)
 zᶜ = 0.0
 for i=1:8
     global zᶜ += 12/8
@@ -19,12 +19,15 @@ for i=1:8
     else
         x⃗₀[i, :] = [zᶜ - 8, 0.0, 8.0]
     end
-end=#
+end
 
-# generated with low res sim to reduce shocking at start
+#= generated with low res sim to reduce shocking at start
 file = jldopen("base_nodes.jld2")
-end_time = keys(file["x⃗"])[end]
+end_time = keys(file["x⃗"])[end-1]
 x⃗₀ = file["x⃗/$end_time"][1].x⃗
+close(file)
+=#
+x⃗₀[:, 2] .= 0.0
 
 n⃗ᵇ = [20 for i = 1:8]
 A⃗ᵇ = repeat([0.1], 8)
@@ -47,9 +50,9 @@ particle_struct = StructArray{GiantKelp}(([12.0], [4.0], [-8.0], [12.0], [4.0], 
 function guassian_smoothing(r, z, rᵉ)
     if z>0
         r = sqrt(r^2 + z^2)
-        return exp(-(7*r)^2/(2*rᵉ^2))/(2*sqrt(2*π*rᵉ^2))
+        return exp(-(3*r)^2/(2*rᵉ^2))/(2*sqrt(2*π*rᵉ^2))
     else
-        return exp(-(7*r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
+        return exp(-(3*r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
     end
 end
 
@@ -93,7 +96,7 @@ set!(model, u=u₀)
 
 filepath = "dragging"
 
-simulation = Simulation(model, Δt=0.2, stop_time=10minutes)
+simulation = Simulation(model, Δt=0.02, stop_time=10minutes)
 
 simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
