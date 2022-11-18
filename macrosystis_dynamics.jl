@@ -42,6 +42,10 @@ end
 
 @inline tension(Δx, l₀, Aᶜ, params) = Δx>l₀ && !(Δx==0.0)  ? params.k*((Δx- l₀)/l₀)^params.α*Aᶜ : 0.0
 
+# TODO: need to reconsile the location of the velocity field being used, the drag, and the elasticity
+# Currently the elasticity acts on the nodes, while the velocity field is interpolated at the midpoint
+# of the segments and the drag is exerted on the water around the segments
+
 @kernel function step_node!(properties, model, Δt, γ, ζ, params)
     p, i = @index(Global, NTuple)
 
@@ -70,13 +74,14 @@ end
     mᵉ = (Vᵐ + params.Cᵃ*(Vᵐ + node.V⃗ᵖ[i]))*params.ρₒ
 
     u⃗ʷ = [interpolate.(values(model.velocities), x, y, z)...]
-    u⃗ᵣₑₗ = u⃗ʷ - node.u⃗[i, :]
+    u⃗ᵣₑₗ = u⃗ʷ - (node.u⃗[i, :])
     sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
 
     a⃗ʷ = [interpolate.(values(model.timestepper.Gⁿ[(:u, :v, :w)]), x, y, z)...]
     a⃗ᵣₑₗ = a⃗ʷ - @inbounds node.F⃗[i, :]./mᵉ
 
-    Aˢ = @inbounds 2*node.r⃗ˢ[i]*l*sin(acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx))/(sᵣₑₗ*l + eps(0.0)))))
+    θ = acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx))/(sᵣₑₗ*l + eps(0.0))))
+    Aˢ = @inbounds 2*node.r⃗ˢ[i]*l*abs(sin(θ)) + π*node.r⃗ˢ[i]*abs(cos(θ))
 
     Fᴰ = .5*params.ρₒ*(params.Cᵈˢ*Aˢ + params.Cᵈᵇ*node.n⃗ᵇ[i]*node.A⃗ᵇ[i])*sᵣₑₗ.*u⃗ᵣₑₗ
 
@@ -108,13 +113,16 @@ end
         node.F⃗[i, :] = (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ)./mᵉ
         node.F⃗ᴰ[i, :] = Fᴰ + Fⁱ # store for back reaction onto water
         
-        if any(isnan.(node.F⃗[i, :])) error("F is NaN: i=$i $(Fᴮ) .+ $(Fᴰ) .+ $(T⁻) .+ $(T⁺)") end
+        if any(isnan.(node.F⃗[i, :])) error("F is NaN: i=$i $(Fᴮ) .+ $(Fᴰ) .+ $(T⁻) .+ $(T⁺) at $x, $y, $z") end
 
-        node.u⃗⁻[i, :] = node.u⃗[i, :]
-        node.u⃗[i, :] += rk3_substep(node.F⃗[i, :], node.F⃗⁻[i, :], Δt, γ, ζ)
-        node.F⃗⁻[i, :] = node.F⃗[i, :]
+        # Think its possibly reassigning the same values on top of eachother?
+        #node.u⃗⁻[i, :] = node.u⃗[i, :]
+        #node.u⃗[i, :] += rk3_substep(node.F⃗[i, :], node.F⃗⁻[i, :], Δt, γ, ζ)
+        node.u⃗[i, :] += node.F⃗[i, :]*Δt
+        #node.F⃗⁻[i, :] = node.F⃗[i, :]
 
-        node.x⃗[i, :] += rk3_substep(node.u⃗[i, :], node.u⃗⁻[i, :], Δt, γ, ζ)
+        #node.x⃗[i, :] += rk3_substep(node.u⃗[i, :], node.u⃗⁻[i, :], Δt, γ, ζ)
+        node.x⃗[i, :] += node.u⃗[i, :]*Δt
 
         if node.x⃗[i, 3] + properties.z[p] > 0.0 #given above bouyancy conditions this should never be possible (assuming a flow with zero vertical velocity at the surface, i.e. a real one)
             node.x⃗[i, 3] = -properties.z[p]
@@ -141,64 +149,53 @@ function kelp_dynamics!(particles, model, Δt)
     worksize = (n_particles, n_nodes)
     workgroup = (1, min(256, worksize[1]))
 
-    for (γ, ζ) in rk3
+    γ, ζ = 1.0, 0#for (γ, ζ) in rk3
         step_node_kernel! = step_node!(device(model.architecture), workgroup, worksize)
         step_node_event = step_node_kernel!(particles.properties, model, Δt, γ, ζ, particles.parameters)
         wait(step_node_event)
-    end
+    #end
 end
 
-function segment_polar_frame(x, y, z, x⃗, x⃗⁻)
-    Δx⃗ = x⃗ - x⃗⁻
-    x⃗₀ = x⃗⁻ + Δx⃗./2
-    θ = atan(Δx⃗[2]/(Δx⃗[1]+eps(0.0)))
-    ϕ = atan(Δx⃗[3]/sqrt(Δx⃗[1]^2 + Δx⃗[2]^2+eps(0.0)))
-    Gˣʸ = LinearAlgebra.Givens(1, 2, cos(θ), sin(θ))
-    Gˣᶻ = LinearAlgebra.Givens(1, 3, cos(ϕ-π/2), sin(ϕ-π/2))
-
-    x⃗_node = Gˣᶻ*(Gˣʸ*([x, y, z] - x⃗₀))
-
-    r = sqrt(x⃗_node[1]^2 + x⃗_node[2]^2)
-
-    return r, x⃗_node[3]
+struct LocalTransform{X, RZ, RX}
+    x⃗₀ :: X
+    R₁ :: RZ
+    R₂ :: RX
 end
 
-@kernel function node_weights!(drag_nodes, particles, grid, p, n, params)
+@inline (transform::LocalTransform)(x, y, z) = transform.R₁*(transform.R₂*([x, y, z] - transform.x⃗₀))
+
+@inline function LocalTransform(θ::Number, ϕ::Number, x⃗₀::Vector) 
+    R₁ = LinearAlgebra.Givens(1, 3, cos(-ϕ), sin(-ϕ))
+    R₂ = LinearAlgebra.Givens(1, 2, cos(θ), sin(θ))
+    return LocalTransform(x⃗₀, R₁, R₂)
+end
+
+@kernel function node_weights!(drag_nodes, particles, grid,  rᵉ, l, polar_transform, n)
     i, j, k = @index(Global, NTuple)
 
-    properties = particles.properties
-    node = @inbounds properties.nodes[p]
+    x, y, z = Oceananigans.node(Center(), Center(), Center(), i, j, k, grid)
 
-    # get node positions
-    x⃗ = @inbounds node.x⃗[n, :] + [properties.x[p], properties.y[p], properties.z[p]]
-    if n==1
-        x⃗⁻ = @inbounds [properties.x[p], properties.y[p], properties.z[p]]
+    x_, y_, z_ = polar_transform(x, y, z)
+    r = sqrt(x_^2+y_^2)
+    # if the last segment exerted a force here then don't exert the force here
+    # questionable but ???
+    if n == 1 || @inbounds drag_nodes[i, j, k] == 0
+        @inbounds drag_nodes[i, j, k] = ifelse((r<rᵉ)&(abs(z_)<l/2+rᵉ), particles.parameters.drag_smoothing(r, abs(z_)-l/2, rᵉ), 0.0)
     else
-        x⃗⁻ = @inbounds node.x⃗[n-1, :] + [properties.x[p], properties.y[p], properties.z[p]]
+        @inbounds drag_nodes[i, j, k] = 0.0
     end
-    Δx⃗ = x⃗ - x⃗⁻
-    x, y, z_ = Oceananigans.node(Center(), Center(), Center(), i, j, k, grid)
-    r, z = segment_polar_frame(x, y, z_, x⃗, x⃗⁻)
-
-    rᵉ = @inbounds node. r⃗ᵉ[n]
-    l = sqrt(dot(Δx⃗, Δx⃗))
-    @inbounds drag_nodes[p, n][i, j, k] = ifelse((r<rᵉ)&(abs(z)<l/2+rᵉ), particles.parameters.drag_smoothing(r, abs(z)-l/2, rᵉ), 0.0)#ifelse((r<4.746*rᵉ)&(abs(z)<l/2), exp(-r^2/(2*rᵉ^2)), 0.0)
 end
 
-@kernel function calculate_normalisations!(drag_nodes, weight_normalisations)
-    p, n = @index(Global, NTuple)
-    @inbounds weight_normalisations[p, n] = @inbounds sum(drag_nodes[p, n])
-end
-
-@kernel function apply_drag!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisations, particles, grid, p, n)
+@kernel function apply_drag!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisations, particles, grid, F⃗ᴰ)
     i, j, k = @index(Global, NTuple)
 
     vol = Vᶜᶜᶜ(i, j, k, grid)
+    inverse_effective_mass = @inbounds drag_nodes[i, j, k]/(normalisations*vol*particles.parameters.ρₒ)
+    if any(isnan.(F⃗ᴰ.*inverse_effective_mass)) error("NaN from $F⃗ᴰ, $normalisations * $vol * .../$(drag_nodes[i, j, k])") end
     @inbounds begin
-        F⃗ᴰ = particles.properties.nodes[p].F⃗ᴰ[n, :]
-        Gᵘ[i, j, k] -= F⃗ᴰ[1]*drag_nodes[p, n][i, j, k]/(normalisations[p, n]*vol*particles.parameters.ρₒ)
-        Gᵛ[i, j, k] -= F⃗ᴰ[2]*drag_nodes[p, n][i, j, k]/(normalisations[p, n]*vol*particles.parameters.ρₒ)
-        Gʷ[i, j, k] -= F⃗ᴰ[3]*drag_nodes[p, n][i, j, k]/(normalisations[p, n]*vol*particles.parameters.ρₒ)
+        Gᵘ[i, j, k] -= F⃗ᴰ[1]*inverse_effective_mass
+        Gᵛ[i, j, k] -= F⃗ᴰ[2]*inverse_effective_mass
+        Gʷ[i, j, k] -= F⃗ᴰ[3]*inverse_effective_mass
     end
 end
 
@@ -206,38 +203,41 @@ function drag_water!(model)
     particles = model.particles
     Gᵘ, Gᵛ, Gʷ = model.timestepper.Gⁿ[(:u, :v, :w)]
     drag_nodes = model.auxiliary_fields.drag_nodes
-    normalisations = model.auxiliary_fields.drag_normalisation
 
     workgroup, worksize = work_layout(grid, :xyz)
     node_weights_kernel! = node_weights!(device(model.architecture), workgroup, worksize)
-
-    events = []
-
-    for p = 1:length(particles), n = 1:length(particles.properties.nodes[1].l⃗₀)
-        node_weights_event = node_weights_kernel!(drag_nodes, particles, model.grid, p, n, particles.parameters)
-        push!(events, node_weights_event)
-    end
-
-    wait(device(model.architecture), MultiEvent(Tuple(events)))
-
-    n_particles = length(particles)
-    n_nodes = length(particles.properties.nodes[1].l⃗₀)
-    worksize_p = (n_particles, n_nodes)
-    workgroup_p = (1, min(256, worksize[1]))
-    
-    calculate_normalisations_kernel! = calculate_normalisations!(device(model.architecture), workgroup_p, worksize_p)
-
-    calculate_normalisations_event = calculate_normalisations_kernel!(drag_nodes, normalisations)
-    wait(calculate_normalisations_event)
-
     apply_drag_kernel! = apply_drag!(device(model.architecture), workgroup, worksize)
 
-    events = []
-
     for p = 1:length(particles), n = 1:length(particles.properties.nodes[1].l⃗₀)
-        apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisations, particles, grid, p, n)
-        push!(events, apply_drag_event)
-    end
+        properties = particles.properties
+        node = @inbounds properties.nodes[p]
 
-    wait(device(model.architecture), MultiEvent(Tuple(events)))
+        # get node positions and size
+        @inbounds begin
+            x⃗ = node.x⃗[n, :] + [properties.x[p], properties.y[p], properties.z[p]]
+            if n==1
+                x⃗⁻ = [properties.x[p], properties.y[p], properties.z[p]]
+            else
+                x⃗⁻ = node.x⃗[n-1, :] + [properties.x[p], properties.y[p], properties.z[p]]
+            end
+        end
+
+        rᵉ = @inbounds node.r⃗ᵉ[n]
+
+        Δx⃗ = x⃗ - x⃗⁻
+        l = sqrt(dot(Δx⃗, Δx⃗))
+
+        x⃗₀ = x⃗⁻ + Δx⃗./2
+        θ = atan(Δx⃗[2]/(Δx⃗[1]+eps(0.0))) + @show π*0^(1 + sign(Δx⃗[1]))
+        ϕ = atan(sqrt(Δx⃗[1]^2 + Δx⃗[2]^2+eps(0.0))/Δx⃗[3])
+
+        node_weights_event = node_weights_kernel!(drag_nodes, particles, model.grid, rᵉ, l, LocalTransform(θ, ϕ, x⃗₀), n)
+        wait(node_weights_event)
+
+        normalisation = sum(drag_nodes)
+
+        F⃗ᴰ = particles.properties.nodes[p].F⃗ᴰ[n, :]
+        apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisation, particles, grid, F⃗ᴰ)
+        wait(apply_drag_event)
+    end
 end

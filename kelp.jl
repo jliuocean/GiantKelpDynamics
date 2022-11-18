@@ -28,23 +28,24 @@ nodes = Nodes(x⃗₀,
               zeros(8, 3), 
               repeat([12/8], 8), 
               repeat([0.03], 8), 
-              n⃗ᵇ, 
-              A⃗ᵇ, 
+              n⃗ᵇ, #repeat([1], 8), 
+              A⃗ᵇ, #repeat([1], 8), 
               repeat([0.003], 8), 
-              repeat([1.0], 8), 
+              repeat([0.5], 8), 
               zeros(8, 3), 
               zeros(8, 3), 
               zeros(8, 3), 
               zeros(8, 3))
 
-particle_struct = StructArray{GiantKelp}(([12.0], [0.0], [-8.0], [4.0], [4.0], [-8.0], [nodes]))
+particle_struct = StructArray{GiantKelp}(([12.0], [4.0], [-8.0], [12.0], [4.0], [-8.0], [nodes]))
 
 function guassian_smoothing(r, z, rᵉ)
     if z>0
         r = sqrt(r^2 + z^2)
+        return 0.0#exp(-(7*r)^2/(2*rᵉ^2))/(2*sqrt(2*π*rᵉ^2))
+    else
+        return exp(-(7*r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
     end
-
-    return exp(-(7*r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
 end
 
 particles = LagrangianParticles(particle_struct; 
@@ -73,17 +74,16 @@ background_perp(x, y, z, t) = 0.0
 relax_perp = Relaxation(1/2, mask_rel, background_perp)
 
 
-drag_nodes = repeat([CenterField(grid)], 1, 8)
-drag_normalisation = repeat([Inf], 1, 8)
+drag_nodes = CenterField(grid)
 
 model = NonhydrostaticModel(; grid,
                                 advection = WENO(),
                                 timestepper = :RungeKutta3,
-                                closure = ScalarDiffusivity(ν=1e-4, κ=1e-4),
-                                boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
-                                forcing = (u = relax_U, v = relax_perp, w = relax_perp),
+                                #closure = ScalarDiffusivity(ν=1e-4, κ=1e-4),
+                                #boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
+                                #forcing = (u = relax_U, v = relax_perp, w = relax_perp),
                                 particles = particles,
-                                auxiliary_fields = (; drag_nodes, drag_normalisation))
+                                auxiliary_fields = (; drag_nodes))
 set!(model, u=u₀)
 
 simulation = Simulation(model, Δt=0.02, stop_time=5minutes)
@@ -119,7 +119,7 @@ run!(simulation)
 #=
 file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])
-x⃗ = zeros(length(times), n_seg, 3)
+x⃗ = zeros(length(times), 8, 3)
 for (i, t) in enumerate(times)
     x⃗[i, :, :] = file["x⃗/$t"][1].x⃗
 end
