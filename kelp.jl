@@ -26,7 +26,7 @@ A⃗ᵇ = repeat([0.1], 8)
 
 nodes = Nodes(x⃗₀, 
               zeros(8, 3), 
-              repeat([12/8], 8), 
+              repeat([.75*12/8], 8), 
               repeat([0.03], 8), 
               n⃗ᵇ, #repeat([1], 8), 
               A⃗ᵇ, #repeat([1], 8), 
@@ -86,7 +86,7 @@ model = NonhydrostaticModel(; grid,
                                 auxiliary_fields = (; drag_nodes))
 set!(model, u=u₀)
 
-simulation = Simulation(model, Δt=0.02, stop_time=5minutes)
+simulation = Simulation(model, Δt=0.1, stop_time=3minutes)
 
 simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
@@ -116,7 +116,7 @@ end
 simulation.callbacks[:save_particles] = Callback(store_particles!)
 run!(simulation)
 
-#=
+
 file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])
 x⃗ = zeros(length(times), 8, 3)
@@ -125,25 +125,31 @@ for (i, t) in enumerate(times)
 end
 
 using GLMakie
-#=
+
 fig = Figure(resolution = (1000*maximum(x⃗[:, :, 1])/maximum(x⃗[:, :, 3]), 1000))
 ax  = Axis(fig[1, 1]; limits=((min(0, minimum(x⃗[:, :, 1])), maximum(x⃗[:, :, 1])), (min(0, minimum(x⃗[:, :, 3])), maximum(x⃗[:, :, 3]))), xlabel="x (m)", ylabel="z (m)", title="t=$(prettytime(0))", aspect = AxisAspect(maximum(x⃗[:, :, 1])/maximum(x⃗[:, :, 3])))
 
 # animation settings
-nframes = length(times)
+nframes = 1000
 framerate = floor(Int, nframes/30)
 frame_iterator = 1:nframes
 
-record(fig, "nodes_dragging.mp4", frame_iterator; framerate = framerate) do i
-    msg = string("Plotting frame ", i, " of ", nframes)
-    print(msg * " \r")
-    if !(i==1)
-        plot!(ax, x⃗[(i-1), :, 1], x⃗[(i-1), :, 3]; color=:white)
-    end
-    plot!(ax, x⃗[i, :, 1], x⃗[i, :, 3])
-    ax.title = "t=$(prettytime(parse(Float64, times[i])))"
-end=#
+n = Observable(1)
+x = @lift x⃗[$n, :, 1]
+z = @lift x⃗[$n, :, 3]
 
+
+plot!(ax, x, z)
+for i=1:8
+    lines!(ax, x⃗[:, i, 1], x⃗[:, i, 3])
+end
+record(fig, "nodes_dragging.mp4", frame_iterator; framerate = framerate) do i
+    print("$i" * " \r")
+    n[] = i
+    ax.title = "t=$(prettytime(parse(Float64, times[i])))"
+end
+
+#=
 fig = Figure(resolution = (500*grid.Lx/grid.Lz, 500))
 ax_u  = Axis(fig[1, 1]; title = "u", aspect = AxisAspect(grid.Lx/grid.Lz), xlabel="x (m)", ylabel="z (m)")
 u_plt = model.velocities.u[1:Nx, floor(Int, Ny/2), 1:Nz, end].-u₀

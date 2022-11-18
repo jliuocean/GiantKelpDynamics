@@ -228,16 +228,32 @@ function drag_water!(model)
         l = sqrt(dot(Δx⃗, Δx⃗))
 
         x⃗₀ = x⃗⁻ + Δx⃗./2
-        θ = atan(Δx⃗[2]/(Δx⃗[1]+eps(0.0))) + @show π*0^(1 + sign(Δx⃗[1]))
+        θ = atan(Δx⃗[2]/(Δx⃗[1]+eps(0.0))) + π*0^(1 + sign(Δx⃗[1]))
         ϕ = atan(sqrt(Δx⃗[1]^2 + Δx⃗[2]^2+eps(0.0))/Δx⃗[3])
 
         node_weights_event = node_weights_kernel!(drag_nodes, particles, model.grid, rᵉ, l, LocalTransform(θ, ϕ, x⃗₀), n)
         wait(node_weights_event)
 
         normalisation = sum(drag_nodes)
-
         F⃗ᴰ = particles.properties.nodes[p].F⃗ᴰ[n, :]
-        apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisation, particles, grid, F⃗ᴰ)
-        wait(apply_drag_event)
+
+        # fallback if nodes are closer together than gridpoints and the line joining them is parallel to a grid Axis
+        # as this means there are then no nodes in the stencil. This is mainly an issue for nodes close together lying on the surface
+        # As long as the (relaxed) segment lengths are properly considered this shouldn't be an issue except during startup where upstream 
+        # elements will quickly move towards dowmnstream elements
+        if normalisation == 0.0
+            (ϵ, i), (η, j), (ζ, k) = modf.(fractional_indices(x⃗₀..., (Center(), Center(), Center()), model.grid))
+            i, j, k = floor.(Int, (i, j, k))
+            vol = Vᶜᶜᶜ(i, j, k, model.grid)
+            inverse_effective_mass = @inbounds 1/(vol*particles.parameters.ρₒ)
+            Gᵘ[i, j, k] -= F⃗ᴰ[1]*inverse_effective_mass
+            Gᵛ[i, j, k] -= F⃗ᴰ[2]*inverse_effective_mass
+            Gʷ[i, j, k] -= F⃗ᴰ[3]*inverse_effective_mass
+
+            @warn "Used fallback drag application as stencil found no nodes, this should be concerning if not in the initial transient response"
+        else
+            apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisation, particles, grid, F⃗ᴰ)
+            wait(apply_drag_event)
+        end
     end
 end
