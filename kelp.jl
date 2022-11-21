@@ -66,7 +66,8 @@ particles = LagrangianParticles(particle_struct;
                                           Cᵈˢ = 1.0, 
                                           Cᵈᵇ=0.4*12^(-0.485), 
                                           Cᵃ = 3.0,
-                                          drag_smoothing = guassian_smoothing))
+                                          drag_smoothing = guassian_smoothing,
+                                          n_nodes = 8))
 
 u₀=0.2
 
@@ -94,7 +95,7 @@ model = NonhydrostaticModel(; grid,
                                 auxiliary_fields = (; drag_nodes))
 set!(model, u=u₀)
 
-filepath = "dragging"
+filepath = "dragging_new"
 
 simulation = Simulation(model, Δt=0.01, stop_time=10minutes)
 

@@ -250,7 +250,7 @@ end
     # As long as the (relaxed) segment lengths are properly considered this shouldn't be an issue except during startup where upstream 
     # elements will quickly move towards dowmnstream elements
     if normalisation == 0.0
-        (ϵ, i), (η, j), (ζ, k) = modf.(fractional_indices(x⃗₀..., (Center(), Center(), Center()), model.grid))
+        (ϵ, i), (η, j), (ζ, k) = modf.(fractional_indices(x⃗..., (Center(), Center(), Center()), model.grid))
         i, j, k = floor.(Int, (i, j, k))
         vol = Vᶜᶜᶜ(i, j, k, model.grid)
         inverse_effective_mass = @inbounds 1/(vol*particles.parameters.ρₒ)
