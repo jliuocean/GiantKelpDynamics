@@ -4,8 +4,8 @@ using Oceananigans.Units: minutes, minute, hour, hours, day
 include("macrosystis_dynamics.jl")
 
 # ## Setup grid 
-Lx, Ly, Lz = 64, 8, 8
-Nx, Ny, Nz = 4 .*(Lx, Ly, Lz)
+Lx, Ly, Lz = 32, 4, 8
+Nx, Ny, Nz = 8 .*(Lx, Ly, Lz)
 grid = RectilinearGrid(size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
 
 # ## Setup kelp particles
@@ -45,7 +45,7 @@ nodes = Nodes(x⃗₀,
               zeros(8, 3), 
               zeros(8, 3))
 
-particle_struct = StructArray{GiantKelp}(([12.0], [4.0], [-8.0], [12.0], [4.0], [-8.0], [nodes]))
+particle_struct = StructArray{GiantKelp}(([12.0], [2.0], [-8.0], [12.0], [2.0], [-8.0], [nodes]))
 
 function guassian_smoothing(r, z, rᵉ)
     if z>0
@@ -96,7 +96,7 @@ set!(model, u=u₀)
 
 filepath = "dragging"
 
-simulation = Simulation(model, Δt=0.02, stop_time=10minutes)
+simulation = Simulation(model, Δt=0.01, stop_time=10minutes)
 
 simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
@@ -114,7 +114,7 @@ simulation.callbacks[:progress] = Callback(progress_message, IterationInterval(2
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, model.velocities,
                          filename = "$filepath.jld2",
-                         schedule = IterationInterval(10),
+                         schedule = IterationInterval(50),
                          overwrite_existing = true)
 
 function store_particles!(sim)
@@ -123,7 +123,7 @@ function store_particles!(sim)
     end
 end
 
-simulation.callbacks[:save_particles] = Callback(store_particles!, IterationInterval(10))
+simulation.callbacks[:save_particles] = Callback(store_particles!, IterationInterval(50))
 run!(simulation)
 
 file = jldopen("$(filepath)_particles.jld2")
