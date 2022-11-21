@@ -8,33 +8,33 @@ using Oceananigans.Operators: Vᶜᶜᶜ
 const rk3 = ((8//15, nothing), (5//12, -17//60), (3//4, -5//12))
 
 # ## Create the particles
-struct Nodes
+struct Nodes{X, U, L, R, N, A, V, RE, F, UM, FM, FD}
     # nodes
-    x⃗# node positions relative to base
-    u⃗ # node velocities in rest frame of base
-    l⃗₀ # segment unstretched length
-    r⃗ˢ # stipe radius
-    n⃗ᵇ # number of bladdes
-    A⃗ᵇ # area of individual blade
-    V⃗ᵖ # volume of pneumatocysts assuming density is air so ∼ 0 kg/m³
-    r⃗ᵉ # effective radius to drag over
+    x⃗::X# node positions relative to base
+    u⃗::U # node velocities in rest frame of base
+    l⃗₀::L # segment unstretched length
+    r⃗ˢ::R # stipe radius
+    n⃗ᵇ::N # number of bladdes
+    A⃗ᵇ::A # area of individual blade
+    V⃗ᵖ::V # volume of pneumatocysts assuming density is air so ∼ 0 kg/m³
+    r⃗ᵉ::RE # effective radius to drag over
 
     # forces on nodes and force history
-    F⃗
-    u⃗⁻
-    F⃗⁻
-    F⃗ᴰ
+    F⃗::F
+    u⃗⁻::UM
+    F⃗⁻::FM
+    F⃗ᴰ::FD
 end
 
-struct GiantKelp
+struct GiantKelp{X, Y, Z, X0, Y0, Z0, Nodes}
     # origin position and velocity
-    x
-    y
-    z
+    x::X
+    y::Y
+    z::Z
 
-    x₀
-    y₀
-    z₀
+    x₀::X0
+    y₀::Y0
+    z₀::Z0
 
     #information about nodes
     nodes::Nodes
