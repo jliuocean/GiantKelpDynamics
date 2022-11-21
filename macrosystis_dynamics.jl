@@ -156,18 +156,34 @@ function kelp_dynamics!(particles, model, Δt)
     end
 end
 
-struct LocalTransform{X, RZ, RX}
+struct LocalTransform{X, RZ, RX, RN, RP}
     x⃗₀ :: X
     R₁ :: RZ
     R₂ :: RX
+    R₃⁺ :: RP
+    R₃⁻ :: RN
 end
 
-@inline (transform::LocalTransform)(x, y, z) = transform.R₁*(transform.R₂*([x, y, z] - transform.x⃗₀))
+@inline function (transform::LocalTransform)(x, y, z)
+    x⃗_ = transform.R₁*(transform.R₂*([x, y, z] - transform.x⃗₀))
 
-@inline function LocalTransform(θ::Number, ϕ::Number, x⃗₀::Vector) 
+    if x⃗_[3]>=0.0
+        x_, y_, z_ = transform.R₃⁺*x⃗_
+    else
+        x_, y_, z_ = transform.R₃⁻*x⃗_
+    end
+
+    return x_, y_, z_
+end
+
+
+@inline function LocalTransform(θ::Number, ϕ::Number, θ⁺::Number, θ⁻::Number, x⃗₀::Vector) 
     R₁ = LinearAlgebra.Givens(1, 3, cos(-ϕ), sin(-ϕ))
     R₂ = LinearAlgebra.Givens(1, 2, cos(θ), sin(θ))
-    return LocalTransform(x⃗₀, R₁, R₂)
+
+    R₃⁺ = LinearAlgebra.Givens(1, 3, cos(θ⁺), sin(θ⁺))
+    R₃⁻ = LinearAlgebra.Givens(1, 3, cos(θ⁻), sin(θ⁻))
+    return LocalTransform(x⃗₀, R₁, R₂, R₃⁺, R₃⁻)
 end
 
 @kernel function node_weights!(drag_nodes, particles, grid, rᵉ, l⁺, l⁻, polar_transform, n)
@@ -177,13 +193,7 @@ end
 
     x_, y_, z_ = polar_transform(x, y, z)
     r = sqrt(x_^2+y_^2)
-    # if the last segment exerted a force here then don't exert the force here
-    # questionable but ???
-    #if n == 1 || @inbounds drag_nodes[i, j, k] == 0
-        @inbounds drag_nodes[i, j, k] = ifelse((r<rᵉ)&(-l⁻-rᵉ<z_<l⁺+rᵉ), particles.parameters.drag_smoothing(r, abs(z_)-ifelse(z > 0, l⁺, l⁻), rᵉ), 0.0)
-    #else
-    #    @inbounds drag_nodes[i, j, k] = 0.0
-    #end
+    @inbounds drag_nodes[i, j, k] = ifelse((r<rᵉ)&(-l⁻<z_<l⁺), particles.parameters.drag_smoothing(r, rᵉ), drag_nodes[i, j, k])
 end
 
 @kernel function apply_drag!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisations, particles, grid, F⃗ᴰ)
@@ -229,17 +239,20 @@ end
         l⁻ = sqrt(dot(node.x⃗[n, :] - node.x⃗[n-1, :], node.x⃗[n, :] - node.x⃗[n-1, :]))/2
     end
     
-            
-    if n==n_nodes
-        l⁺ = sqrt(dot(node.x⃗[n, :] - node.x⃗[n-1, :], node.x⃗[n, :] - node.x⃗[n-1, :]))/2
-    else
-        l⁺ = sqrt(dot(node.x⃗[n+1, :] - node.x⃗[n, :], node.x⃗[n+1, :] - node.x⃗[n, :]))/2
-    end
-
     θ = atan(Δx⃗[2]/(Δx⃗[1]+eps(0.0))) + π*0^(1 + sign(Δx⃗[1]))
     ϕ = atan(sqrt(Δx⃗[1]^2 + Δx⃗[2]^2+eps(0.0))/Δx⃗[3])
 
-    node_weights_event = node_weights_kernel!(drag_nodes, particles, grid, rᵉ, l⁺, l⁻, LocalTransform(θ, ϕ, x⃗), n)
+    θ⁻ = acos(dot(Δx⃗, x⃗ - x⃗⁻)/(sqrt(dot(Δx⃗, Δx⃗))*sqrt(dot(x⃗ - x⃗⁻, x⃗ - x⃗⁻))))
+
+    if n==n_nodes
+        l⁺ = sqrt(dot(node.x⃗[n, :] - node.x⃗[n-1, :], node.x⃗[n, :] - node.x⃗[n-1, :]))/2
+        θ⁺ = θ⁻
+    else
+        l⁺ = sqrt(dot(node.x⃗[n+1, :] - node.x⃗[n, :], node.x⃗[n+1, :] - node.x⃗[n, :]))/2
+        θ⁺ = - acos(dot(Δx⃗, x⃗⁺ - x⃗)/(sqrt(dot(Δx⃗, Δx⃗))*sqrt(dot(x⃗⁺ - x⃗, x⃗⁺ - x⃗))))
+    end
+
+    node_weights_event = node_weights_kernel!(drag_nodes, particles, grid, rᵉ, l⁺, l⁻, LocalTransform(θ, ϕ, θ⁺, θ⁻, x⃗), n)
     wait(node_weights_event)
 
     normalisation = sum(drag_nodes)
@@ -258,7 +271,7 @@ end
         Gᵛ[i, j, k] -= F⃗ᴰ[2]*inverse_effective_mass
         Gʷ[i, j, k] -= F⃗ᴰ[3]*inverse_effective_mass
 
-        @warn "Used fallback drag application as stencil found no nodes, this should be concerning if not in the initial transient response"
+        @warn "Used fallback drag application as stencil found no nodes, this should be concerning if not in the initial transient response at $p, $n"
     else
         apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisation, particles, grid, F⃗ᴰ)
         wait(apply_drag_event)

@@ -5,7 +5,7 @@ include("macrosystis_dynamics.jl")
 
 # ## Setup grid 
 Lx, Ly, Lz = 32, 4, 8
-Nx, Ny, Nz = 8 .*(Lx, Ly, Lz)
+Nx, Ny, Nz = 4 .*(Lx, Ly, Lz)
 grid = RectilinearGrid(size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
 
 # ## Setup kelp particles
@@ -21,12 +21,6 @@ for i=1:8
     end
 end
 
-#= generated with low res sim to reduce shocking at start
-file = jldopen("base_nodes.jld2")
-end_time = keys(file["x⃗"])[end-1]
-x⃗₀ = file["x⃗/$end_time"][1].x⃗
-close(file)
-=#
 x⃗₀[:, 2] .= 0.0
 
 n⃗ᵇ = [20 for i = 1:8]
@@ -47,14 +41,7 @@ nodes = Nodes(x⃗₀,
 
 particle_struct = StructArray{GiantKelp}(([12.0], [2.0], [-8.0], [12.0], [2.0], [-8.0], [nodes]))
 
-function guassian_smoothing(r, z, rᵉ)
-    if z>0
-        r = sqrt(r^2 + z^2)
-        return exp(-(3*r)^2/(2*rᵉ^2))/(2*sqrt(2*π*rᵉ^2))
-    else
-        return exp(-(3*r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
-    end
-end
+@inline guassian_smoothing(r, rᵉ) = exp(-(3*r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
 
 particles = LagrangianParticles(particle_struct; 
                             dynamics = kelp_dynamics!, 
@@ -75,13 +62,8 @@ u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
 
-background_U(x, y, z, t) = ifelse(x <= 8, u₀, 0.0)
-mask_rel(x, y, z) = ifelse(x < 5, 1, 0)
-relax_U = Relaxation(1/2, mask_rel, background_U)
-
-background_perp(x, y, z, t) = 0.0
-relax_perp = Relaxation(1/2, mask_rel, background_perp)
-
+u_forcing_func(args...) = 1e-5
+u_forcing = Forcing(u_forcing_func, discrete_form=true)
 
 drag_nodes = CenterField(grid)
 
@@ -90,7 +72,7 @@ model = NonhydrostaticModel(; grid,
                                 timestepper = :RungeKutta3,
                                 closure = ScalarDiffusivity(ν=1e-4, κ=1e-4),
                                 boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
-                                forcing = (u = relax_U, v = relax_perp, w = relax_perp),
+                                forcing = (u = u_forcing, ),
                                 particles = particles,
                                 auxiliary_fields = (; drag_nodes))
 set!(model, u=u₀)
@@ -125,7 +107,7 @@ function store_particles!(sim)
 end
 
 simulation.callbacks[:save_particles] = Callback(store_particles!, IterationInterval(50))
-run!(simulation)
+#=run!(simulation)
 
 file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])
@@ -183,3 +165,5 @@ record(fig, "horizontal_u.mp4", frame_iterator; framerate = framerate) do i
     print(msg * " \r")
     ax_u.title = "t=$(prettytime(parse(Float64, times[i])))"
 end
+
+=#
