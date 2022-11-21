@@ -30,12 +30,11 @@ drag_nodes = CenterField(grid)
 model = NonhydrostaticModel(;grid, particles, auxiliary_fields = (; drag_nodes))
 
 set!(model, u=0.15)
-drag_water_callback = Callback(drag_water!; callsite = TendencyCallsite())
-#=
 
+drag_water_callback = Callback(drag_water!; callsite = TendencyCallsite())
 
 simulation = Simulation(model, Δt=0.05, stop_time=1minutes)
 
 simulation.callbacks[:drag_water] = drag_water_callback
 
-run!(simulation)=#
+run!(simulation)

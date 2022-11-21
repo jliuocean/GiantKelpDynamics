@@ -3,10 +3,12 @@ using Oceananigans.Units: minutes, minute, hour, hours, day
 
 include("macrosystis_dynamics.jl")
 
+arch = CUDA.has_cuda_gpu() ? Oceananigans.GPU() : Oceananigans.CPU()
+
 # ## Setup grid 
-Lx, Ly, Lz = 32, 4, 8
-Nx, Ny, Nz = 4 .*(Lx, Ly, Lz)
-grid = RectilinearGrid(size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
+Lx, Ly, Lz = 24, 4, 8
+Nx, Ny, Nz = 8 .*(Lx, Ly, Lz)
+grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
 
 # ## Setup kelp particles
 
@@ -26,7 +28,8 @@ x⃗₀[:, 2] .= 0.0
 n⃗ᵇ = [20 for i = 1:8]
 A⃗ᵇ = repeat([0.1], 8)
 
-nodes = Nodes(x⃗₀, 
+nodes = Nodes(arch_array.(arch,
+              (x⃗₀, 
               zeros(8, 3), 
               repeat([.8*12/8], 8), 
               repeat([0.03], 8), 
@@ -37,9 +40,9 @@ nodes = Nodes(x⃗₀,
               zeros(8, 3), 
               zeros(8, 3), 
               zeros(8, 3), 
-              zeros(8, 3))
+              zeros(8, 3)))...)
 
-particle_struct = StructArray{GiantKelp}(([12.0], [2.0], [-8.0], [12.0], [2.0], [-8.0], [nodes]))
+particle_struct = StructArray{GiantKelp}(arch_array(arch, ([5.0], [2.0], [-8.0], [5.0], [2.0], [-8.0], [nodes])))
 
 @inline guassian_smoothing(r, rᵉ) = exp(-(3*r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
 
@@ -62,8 +65,15 @@ u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
 
-u_forcing_func(args...) = 1e-5
-u_forcing = Forcing(u_forcing_func, discrete_form=true)
+#u_forcing_func(args...) = 1e-5
+#u_forcing = Forcing(u_forcing_func, discrete_form=true)
+background_U(x, y, z, t) = ifelse(x <= 8, u₀, 0.0)
+mask_rel(x, y, z) = ifelse(x < 3, 1, 0)
+relax_U = Relaxation(1/2, mask_rel, background_U)
+
+background_perp(x, y, z, t) = 0.0
+relax_perp = Relaxation(1/2, mask_rel, background_perp)
+
 
 drag_nodes = CenterField(grid)
 
@@ -72,7 +82,7 @@ model = NonhydrostaticModel(; grid,
                                 timestepper = :RungeKutta3,
                                 closure = ScalarDiffusivity(ν=1e-4, κ=1e-4),
                                 boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
-                                forcing = (u = u_forcing, ),
+                                forcing = (u = relax_U, v = relax_perp, w = relax_perp),
                                 particles = particles,
                                 auxiliary_fields = (; drag_nodes))
 set!(model, u=u₀)
