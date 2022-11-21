@@ -22,7 +22,7 @@ struct Nodes{X, U, L, R, N, A, V, RE, F, UM, FM, FD}
     # forces on nodes and force history
     F⃗::F
     u⃗⁻::UM
-    F⃗⁻::FU
+    F⃗⁻::FM
     F⃗ᴰ::FD
 end
 
@@ -145,7 +145,7 @@ function kelp_dynamics!(particles, model, Δt)
 
     # calculate each particles node dynamics
     n_particles = length(particles)
-    n_nodes = length(particles.properties.nodes[1].l⃗₀)
+    n_nodes = particles.parameters.n_nodes
     worksize = (n_particles, n_nodes)
     workgroup = (1, min(256, worksize[1]))
 
@@ -208,7 +208,7 @@ function drag_water!(model)
     node_weights_kernel! = node_weights!(device(model.architecture), workgroup, worksize)
     apply_drag_kernel! = apply_drag!(device(model.architecture), workgroup, worksize)
 
-    n_nodes = length(particles.properties.nodes[1].l⃗₀)
+    n_nodes = particles.parameters.n_nodes
     for p in 1:length(particles), n in 1:n_nodes
         properties = particles.properties
         node = @inbounds properties.nodes[p]
