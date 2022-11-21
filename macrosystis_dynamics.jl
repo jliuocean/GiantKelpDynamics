@@ -199,6 +199,72 @@ end
     end
 end
 
+@kernel function drag_node!(particles, properties, grid, drag_nodes, n_nodes, Gᵘ, Gᵛ, Gʷ, node_weights_kernel!, apply_drag_kernel!)
+    p, n = @index(Global, NTuple)
+    node = @inbounds properties.nodes[p]
+
+    # get node positions and size
+    @inbounds begin
+        x⃗ = node.x⃗[n, :] + [properties.x[p], properties.y[p], properties.z[p]]
+        if n==1
+            x⃗⁻ = [properties.x[p], properties.y[p], properties.z[p]]
+        else
+            x⃗⁻ = node.x⃗[n-1, :] + [properties.x[p], properties.y[p], properties.z[p]]
+        end
+
+        if n==n_nodes
+            x⃗⁺ = x⃗
+        else
+            x⃗⁺ = node.x⃗[n+1, :] + [properties.x[p], properties.y[p], properties.z[p]]
+        end
+    end
+
+    rᵉ = @inbounds node.r⃗ᵉ[n]
+
+    Δx⃗ = x⃗⁺ - x⃗⁻
+        
+    if n==1
+        l⁻ = sqrt(dot(node.x⃗[n, :], node.x⃗[n, :]))
+    else
+        l⁻ = sqrt(dot(node.x⃗[n, :] - node.x⃗[n-1, :], node.x⃗[n, :] - node.x⃗[n-1, :]))/2
+    end
+    
+            
+    if n==n_nodes
+        l⁺ = sqrt(dot(node.x⃗[n, :] - node.x⃗[n-1, :], node.x⃗[n, :] - node.x⃗[n-1, :]))/2
+    else
+        l⁺ = sqrt(dot(node.x⃗[n+1, :] - node.x⃗[n, :], node.x⃗[n+1, :] - node.x⃗[n, :]))/2
+    end
+
+    θ = atan(Δx⃗[2]/(Δx⃗[1]+eps(0.0))) + π*0^(1 + sign(Δx⃗[1]))
+    ϕ = atan(sqrt(Δx⃗[1]^2 + Δx⃗[2]^2+eps(0.0))/Δx⃗[3])
+
+    node_weights_event = node_weights_kernel!(drag_nodes, particles, grid, rᵉ, l⁺, l⁻, LocalTransform(θ, ϕ, x⃗), n)
+    wait(node_weights_event)
+
+    normalisation = sum(drag_nodes)
+    F⃗ᴰ = node.F⃗ᴰ[n, :]
+
+    # fallback if nodes are closer together than gridpoints and the line joining them is parallel to a grid Axis
+    # as this means there are then no nodes in the stencil. This is mainly an issue for nodes close together lying on the surface
+    # As long as the (relaxed) segment lengths are properly considered this shouldn't be an issue except during startup where upstream 
+    # elements will quickly move towards dowmnstream elements
+    if normalisation == 0.0
+        (ϵ, i), (η, j), (ζ, k) = modf.(fractional_indices(x⃗₀..., (Center(), Center(), Center()), model.grid))
+        i, j, k = floor.(Int, (i, j, k))
+        vol = Vᶜᶜᶜ(i, j, k, model.grid)
+        inverse_effective_mass = @inbounds 1/(vol*particles.parameters.ρₒ)
+        Gᵘ[i, j, k] -= F⃗ᴰ[1]*inverse_effective_mass
+        Gᵛ[i, j, k] -= F⃗ᴰ[2]*inverse_effective_mass
+        Gʷ[i, j, k] -= F⃗ᴰ[3]*inverse_effective_mass
+
+        @warn "Used fallback drag application as stencil found no nodes, this should be concerning if not in the initial transient response"
+    else
+        apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisation, particles, grid, F⃗ᴰ)
+        wait(apply_drag_event)
+    end
+end
+
 function drag_water!(model)
     particles = model.particles
     Gᵘ, Gᵛ, Gʷ = model.timestepper.Gⁿ[(:u, :v, :w)]
@@ -208,70 +274,11 @@ function drag_water!(model)
     node_weights_kernel! = node_weights!(device(model.architecture), workgroup, worksize)
     apply_drag_kernel! = apply_drag!(device(model.architecture), workgroup, worksize)
 
+    n_particles = length(particles)
     n_nodes = particles.parameters.n_nodes
-    for p in 1:length(particles), n in 1:n_nodes
-        properties = particles.properties
-        node = @inbounds properties.nodes[p]
 
-        # get node positions and size
-        @inbounds begin
-            x⃗ = node.x⃗[n, :] + [properties.x[p], properties.y[p], properties.z[p]]
-            if n==1
-                x⃗⁻ = [properties.x[p], properties.y[p], properties.z[p]]
-            else
-                x⃗⁻ = node.x⃗[n-1, :] + [properties.x[p], properties.y[p], properties.z[p]]
-            end
+    drag_water_node_kernel! = drag_node!(device(model.architecture), (1, min(256, n_particles)), (n_particles, n_nodes))
 
-            if n==n_nodes
-                x⃗⁺ = x⃗
-            else
-                x⃗⁺ = node.x⃗[n+1, :] + [properties.x[p], properties.y[p], properties.z[p]]
-            end
-        end
-
-        rᵉ = @inbounds node.r⃗ᵉ[n]
-
-        Δx⃗ = x⃗⁺ - x⃗⁻
-        
-        if n==1
-            l⁻ = sqrt(dot(node.x⃗[n, :], node.x⃗[n, :]))
-        else
-            l⁻ = sqrt(dot(node.x⃗[n, :] - node.x⃗[n-1, :], node.x⃗[n, :] - node.x⃗[n-1, :]))/2
-        end
-    
-            
-        if n==n_nodes
-            l⁺ = sqrt(dot(node.x⃗[n, :] - node.x⃗[n-1, :], node.x⃗[n, :] - node.x⃗[n-1, :]))/2
-        else
-            l⁺ = sqrt(dot(node.x⃗[n+1, :] - node.x⃗[n, :], node.x⃗[n+1, :] - node.x⃗[n, :]))/2
-        end
-
-        θ = atan(Δx⃗[2]/(Δx⃗[1]+eps(0.0))) + π*0^(1 + sign(Δx⃗[1]))
-        ϕ = atan(sqrt(Δx⃗[1]^2 + Δx⃗[2]^2+eps(0.0))/Δx⃗[3])
-
-        node_weights_event = node_weights_kernel!(drag_nodes, particles, model.grid, rᵉ, l⁺, l⁻, LocalTransform(θ, ϕ, x⃗), n)
-        wait(node_weights_event)
-
-        normalisation = sum(drag_nodes)
-        F⃗ᴰ = particles.properties.nodes[p].F⃗ᴰ[n, :]
-
-        # fallback if nodes are closer together than gridpoints and the line joining them is parallel to a grid Axis
-        # as this means there are then no nodes in the stencil. This is mainly an issue for nodes close together lying on the surface
-        # As long as the (relaxed) segment lengths are properly considered this shouldn't be an issue except during startup where upstream 
-        # elements will quickly move towards dowmnstream elements
-        if normalisation == 0.0
-            (ϵ, i), (η, j), (ζ, k) = modf.(fractional_indices(x⃗₀..., (Center(), Center(), Center()), model.grid))
-            i, j, k = floor.(Int, (i, j, k))
-            vol = Vᶜᶜᶜ(i, j, k, model.grid)
-            inverse_effective_mass = @inbounds 1/(vol*particles.parameters.ρₒ)
-            Gᵘ[i, j, k] -= F⃗ᴰ[1]*inverse_effective_mass
-            Gᵛ[i, j, k] -= F⃗ᴰ[2]*inverse_effective_mass
-            Gʷ[i, j, k] -= F⃗ᴰ[3]*inverse_effective_mass
-
-            @warn "Used fallback drag application as stencil found no nodes, this should be concerning if not in the initial transient response"
-        else
-            apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisation, particles, grid, F⃗ᴰ)
-            wait(apply_drag_event)
-        end
-    end
+    drag_nodes_event = drag_water_node_kernel!(particles, particles.properties, model.grid, drag_nodes, n_nodes, Gᵘ, Gᵛ, Gʷ, node_weights_kernel!, apply_drag_kernel!)
+    wait(drag_nodes_event)
 end
