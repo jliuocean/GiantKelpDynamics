@@ -242,14 +242,16 @@ end
     θ = atan(Δx⃗[2]/(Δx⃗[1]+eps(0.0))) + π*0^(1 + sign(Δx⃗[1]))
     ϕ = atan(sqrt(Δx⃗[1]^2 + Δx⃗[2]^2+eps(0.0))/Δx⃗[3])
 
-    θ⁻ = acos(dot(Δx⃗, x⃗ - x⃗⁻)/(sqrt(dot(Δx⃗, Δx⃗))*sqrt(dot(x⃗ - x⃗⁻, x⃗ - x⃗⁻))))
+    cosθ⁻ = dot(Δx⃗, x⃗ - x⃗⁻)/(sqrt(dot(Δx⃗, Δx⃗))*sqrt(dot(x⃗ - x⃗⁻, x⃗ - x⃗⁻)))
+    θ⁻ = -1.0<=cosθ⁻<=1.0 ? acos(cosθ⁻) : 0.0
 
     if n==n_nodes
         l⁺ = sqrt(dot(node.x⃗[n, :] - node.x⃗[n-1, :], node.x⃗[n, :] - node.x⃗[n-1, :]))/2
         θ⁺ = θ⁻
     else
         l⁺ = sqrt(dot(node.x⃗[n+1, :] - node.x⃗[n, :], node.x⃗[n+1, :] - node.x⃗[n, :]))/2
-        θ⁺ = - acos(dot(Δx⃗, x⃗⁺ - x⃗)/(sqrt(dot(Δx⃗, Δx⃗))*sqrt(dot(x⃗⁺ - x⃗, x⃗⁺ - x⃗))))
+        cosθ⁺ = - dot(Δx⃗, x⃗⁺ - x⃗)/(sqrt(dot(Δx⃗, Δx⃗))*sqrt(dot(x⃗⁺ - x⃗, x⃗⁺ - x⃗)))
+        θ⁺ = -1.0<=cosθ⁺<=1.0 ? acos(cosθ⁺) : 0.0
     end
 
     node_weights_event = node_weights_kernel!(drag_nodes, particles, grid, rᵉ, l⁺, l⁻, LocalTransform(θ, ϕ, θ⁺, θ⁻, x⃗), n)

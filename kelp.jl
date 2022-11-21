@@ -79,7 +79,7 @@ set!(model, u=u₀)
 
 filepath = "dragging_new"
 
-simulation = Simulation(model, Δt=0.01, stop_time=10minutes)
+simulation = Simulation(model, Δt=0.1, stop_time=30.0)
 
 simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
