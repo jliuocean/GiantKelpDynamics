@@ -1,9 +1,17 @@
-using Oceananigans, StructArrays, Printf, JLD2, Statistics
+using Oceananigans, StructArrays, Printf, JLD2, Statistics, CUDA
 using Oceananigans.Units: minutes, minute, hour, hours, day
 
 include("macrosystis_dynamics.jl")
 
 arch = CUDA.has_cuda_gpu() ? Oceananigans.GPU() : Oceananigans.CPU()
+
+if arch == Oceananigans.CPU()
+    adapt_array(array) = Array(array)
+elseif arch == Oceananigans.GPU()
+    adapt_array(array) = CuArray(array)
+else
+    error("Incorrect arch type")
+end
 
 # ## Setup grid 
 Lx, Ly, Lz = 24, 4, 8
@@ -28,23 +36,22 @@ x⃗₀[:, 2] .= 0.0
 n⃗ᵇ = [20 for i = 1:8]
 A⃗ᵇ = repeat([0.1], 8)
 
-nodes = Nodes(arch_array.(arch,
-              (x⃗₀, 
-              zeros(8, 3), 
-              repeat([.8*12/8], 8), 
-              repeat([0.03], 8), 
-              n⃗ᵇ, #repeat([1], 8), 
-              A⃗ᵇ, #repeat([1], 8), 
-              repeat([0.003], 8), 
-              repeat([0.5], 8), 
-              zeros(8, 3), 
-              zeros(8, 3), 
-              zeros(8, 3), 
-              zeros(8, 3)))...)
+nodes = Nodes(adapt_array.((x⃗₀, 
+                            zeros(8, 3), 
+                            repeat([.8*12/8], 8), 
+                            repeat([0.03], 8), 
+                            n⃗ᵇ, #repeat([1], 8), 
+                            A⃗ᵇ, #repeat([1], 8), 
+                            repeat([0.003], 8), 
+                            repeat([0.5], 8), 
+                            zeros(8, 3), 
+                            zeros(8, 3), 
+                            zeros(8, 3), 
+                            zeros(8, 3)))...)
 
-particle_struct = StructArray{GiantKelp}(arch_array(arch, ([5.0], [2.0], [-8.0], [5.0], [2.0], [-8.0], [nodes])))
+particle_struct = StructArray{GiantKelp}(adapt_array.(([5.0], [2.0], [-8.0], [5.0], [2.0], [-8.0], [nodes])))
 
-@inline guassian_smoothing(r, rᵉ) = exp(-(3*r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
+@inline guassian_smoothing(r, rᵉ) = exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
 
 particles = LagrangianParticles(particle_struct; 
                             dynamics = kelp_dynamics!, 
