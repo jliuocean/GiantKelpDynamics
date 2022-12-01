@@ -74,12 +74,17 @@ w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
 
 #u_forcing_func(args...) = 1e-5
 #u_forcing = Forcing(u_forcing_func, discrete_form=true)
-background_U(x, y, z, t) = ifelse(x <= 8, u₀, 0.0)
-mask_rel(x, y, z) = ifelse(x < 3, 1, 0)
-relax_U = Relaxation(10, mask_rel, background_U)
+@inline mask_rel_U(x, y, z) = ifelse(x < 3, 1, 0)
+@inline relax_U(x, y, z, t, u, params) = 10 * mask_rel_U(x, y, z) * (params.u₀ - u)
+U_forcing = Forcing(relax_U, field_dependencies = (:u, ), parameters = (; u₀))
 
-background_perp(x, y, z, t) = 0.0#randn()*0.1*u₀
-relax_perp = Relaxation(10, mask_rel, background_perp)
+@inline mask_rel_V(x, y, z) = ifelse(x < 3, 1, 0)
+@inline relax_V(x, y, z, t, v) = - 10 * mask_rel_V(x, y, z) * v
+V_forcing = Forcing(relax_V, field_dependencies = (:v, ))
+
+@inline mask_rel_W(x, y, z) = ifelse(x < 3, 1, 0)
+@inline relax_W(x, y, z, t, w) = - 10 * mask_rel_W(x, y, z) * w
+W_forcing = Forcing(relax_W, field_dependencies = (:w, ))
 
 drag_nodes = CenterField(grid)
 
@@ -88,7 +93,7 @@ model = NonhydrostaticModel(; grid,
                               timestepper = :RungeKutta3,
                               closure = nothing,#ScalarDiffusivity(ν=1e-4, κ=1e-4),
                               boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
-                              forcing = (u = relax_U, v = relax_perp, w = relax_perp),
+                              forcing = (u = U_forcing, v = V_forcing, w = W_forcing),
                               particles = particles,
                               auxiliary_fields = (; drag_nodes))
 
@@ -96,9 +101,9 @@ uᵢ(x, y, z) = u₀*randn()*0.01
 vᵢ(x, y, z) = u₀*randn()*0.01
 set!(model, u=uᵢ, v=vᵢ, w=vᵢ)
 
-filepath = "fast_noisy"
+filepath = "fast_noisy_short_ts"
 
-simulation = Simulation(model, Δt=0.1, stop_time=1.5minute)
+simulation = Simulation(model, Δt=0.05, stop_time=3minute)
 
 simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
@@ -209,7 +214,7 @@ fig = Figure()
 
 gx = [0.125:0.125:Lx;]
 gy = [0.125:0.125:Ly;]
-gz = [0.125:0.125:Lx;]
+gz = [-Lz:0.125:0.125;]
 
 z_xy = zeros(Float64, Nx, Ny)
 y_xz = ones(Float64, Nx, Nz).*2
