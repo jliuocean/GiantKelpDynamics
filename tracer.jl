@@ -66,7 +66,7 @@ particles = LagrangianParticles(particle_struct;
                                           drag_smoothing = guassian_smoothing,
                                           n_nodes = 8))
 
-u₀=0.2
+u₀=1.0
 
 u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
@@ -86,6 +86,10 @@ V_forcing = Forcing(relax_V, field_dependencies = (:v, ))
 @inline relax_W(x, y, z, t, w) = - 10 * mask_rel_W(x, y, z) * w
 W_forcing = Forcing(relax_W, field_dependencies = (:w, ))
 
+
+N_background(x, y, z, t) = tanh(2*z/8)
+N_relax = Relaxation(; 1/10, target = N_background)
+
 drag_nodes = CenterField(grid)
 
 model = NonhydrostaticModel(; grid,
@@ -93,15 +97,16 @@ model = NonhydrostaticModel(; grid,
                               timestepper = :RungeKutta3,
                               closure = nothing,#ScalarDiffusivity(ν=1e-4, κ=1e-4),
                               boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
-                              forcing = (u = U_forcing, v = V_forcing, w = W_forcing),
+                              forcing = (u = U_forcing, v = V_forcing, w = W_forcing, N = N_relax),
                               particles = particles,
-                              auxiliary_fields = (; drag_nodes))
+                              auxiliary_fields = (; drag_nodes),
+                              tracers = :N)
 
 uᵢ(x, y, z) = u₀*randn()*0.01
 vᵢ(x, y, z) = u₀*randn()*0.01
 set!(model, u=uᵢ, v=vᵢ, w=vᵢ)
 
-filepath = "shorter"
+filepath = "tracer"
 
 simulation = Simulation(model, Δt=0.1, stop_time=3minute)
 
