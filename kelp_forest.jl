@@ -1,120 +1,99 @@
-using Oceananigans, StructArrays, Printf, JLD2, Statistics
-using Oceananigans.Units: minutes, minute, hour, hours, day
+using Oceananigans, StructArrays, Printf, JLD2, Statistics, CUDA
+using Oceananigans.Units
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_w_from_continuity!
+using Oceananigans.Grids: xnodes, ynodes
 
 include("macrosystis_dynamics.jl")
 
+arch = CUDA.has_cuda_gpu() ? Oceananigans.GPU() : Oceananigans.CPU()
+
 # ## Setup grid 
-Lx, Ly, Lz = 64, 8, 8
-Nx, Ny, Nz = 8 .*(Lx, Ly, Lz)
-grid = RectilinearGrid(size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
+Lx, Ly, Lz = 1kilometers, 1kilometers, 8
+Nx, Ny, Nz = 256, 256, 8
+grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
 
 # ## Setup kelp particles
-n_kelp = 8
-n_seg = 8
-Lₖₑₗₚ = 1.5*Lz
-l₀ = Lₖₑₗₚ/n_seg
 
-x = repeat([8.0+4.0*i for i=0:3], 2)
-y = [ifelse(i<=4, 2.0, 6.0) for i=1:8]
-z = repeat([0.125-Lz], n_kelp)
+forest_radius = 100
+smoothing_disance = 3.0
 
-const x₀ = repeat([8+4*i for i=0:3], 2)
-const y₀ = [ifelse(i<=4, 2, 6) for i=1:8]
-const z₀ = repeat([0.125-Lz], n_kelp)
+kelp_x = zeros(Float64, 0)
+kelp_y = zeros(Float64, 0)
+kelp_sf = zeros(Float64, 0)
+kelp_nodes = []
 
-l⃗₀₀ = repeat([l₀], n_seg)
-r⃗ˢ₀ = repeat([0.03], n_seg)
-r⃗ᵉ₀ = repeat([0.25], n_seg)
-n⃗ᵇ₀ = [i*50/n_seg for i = 1:n_seg]
-A⃗ᵇ₀ = repeat([0.1], n_seg)
-x⃗₀ = zeros(n_seg, 3)
-zᶜ = 0.0
-for i=1:n_seg
-    global zᶜ += l⃗₀₀[i]
-    if zᶜ+z₀[1] < 0
-        x⃗₀[i, :] = [0.0, 0.0, zᶜ]
-    else
-        x⃗₀[i, :] = [zᶜ+z₀[1], 0.0, -z₀[1]]
+for x in xnodes(Center, grid), y in ynodes(Center, grid)
+    r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
+    if r < forest_radius
+        scalefactor = 16 * 10 * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
+        push!(kelp_x, x)
+        push!(kelp_y, y)
+        push!(kelp_sf, scalefactor)
+        push!(kelp_nodes, Nodes(number = 8, depth = 8.0))
     end
 end
-u⃗₀ = zeros(n_seg, 3)
-V⃗ᵖ₀ = repeat([0.002], n_seg) # currently assuming pneumatocysts have density 500kg/m³
 
-individuals_nodes = Nodes(x⃗₀, u⃗₀, l⃗₀₀, r⃗ˢ₀, n⃗ᵇ₀, A⃗ᵇ₀, V⃗ᵖ₀, r⃗ᵉ₀, zeros(n_seg, 3), zeros(n_seg, 3), zeros(n_seg, 3), zeros(n_seg, 3))
+n_kelp = length(kelp_x)
 
-# this only works here where there is one particle (i.e. assumes all kelp have same base position)
-kelp_nodes = repeat([individuals_nodes], n_kelp)
+particle_struct = StructArray{GiantKelp}((zeros(Float64, n_kelp), zeros(Float64, n_kelp), zeros(Float64, n_kelp), kelp_x, kelp_y, ones(n_kelp) .* -8.0, kelp_sf, kelp_nodes));
 
-kelp_particles = StructArray{GiantKelp}((x, y, z, x₀, y₀, z₀, nodes))
+@inline guassian_smoothing(r, rᵉ) = 1.0#exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
 
-# here I am assuming the blades behave as streamers with aspect ratio approx 12 https://arc.aiaa.org/doi/pdf/10.2514/1.9754
+particles = LagrangianParticles(particle_struct; 
+                                dynamics = kelp_dynamics!, 
+                                parameters = (k = 10 ^ 5, 
+                                              α = 1.41, 
+                                              ρₒ = 1026.0, 
+                                              ρₐ = 1.225, 
+                                              g = 9.81, 
+                                              Cᵈˢ = 1.0, 
+                                              Cᵈᵇ= 0.4 * 12 ^ (-0.485), 
+                                              Cᵃ = 3.0,
+                                              drag_smoothing = guassian_smoothing,
+                                              n_nodes = 8,
+                                              kᵈ = 10 ^ 3)) # for a linear spring system, to be non-oscillatory we need kᵈ>√k
 
-particles = LagrangianParticles(kelp_particles; dynamics=kelp_dynamics!, parameters=(k = 10^5, α = 1.41, ρₒ = 1026.0, ρₐ = 1.225, g = 9.81, Cᵈˢ = 1.0, Cᵈᵇ=0.4*12^(-0.485), Cᵃ = 3.0)) 
+drag_nodes = CenterField(grid)
 
-u₀=0.2
+@inline tidal_forcing(x, y, z, t, params) = - params.Aᵤ * params.ω * sin(params.ω * (t - params.t_central) - params.ϕᵤ) - params.Aᵥ * params.ω * cos(params.ω * (t - params.t_central) - params.ϕᵥ)
 
 u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
-
-background_U(x, y, z, t) = ifelse(x <= 5, u₀, 0.0)
-mask_rel(x, y, z) = ifelse(x < 5, 1, 0)
-relax_U = Relaxation(1/2, mask_rel, background_U)
-
-background_perp(x, y, z, t) = 0.0
-relax_perp = Relaxation(1/2, mask_rel, background_perp)
-
-
-using Oceananigans.BuoyancyModels: g_Earth
-
-amplitude = 1.0 # m
-period = 15.0 # s
-frequency = 1/period
-wavenumber = frequency^2/g_Earth
-wavelength = 2π/wavenumber
-
-# The vertical scale over which the Stokes drift of a monochromatic surface wave
-# decays away from the surface is `1/2wavenumber`, or
-const vertical_scale = wavelength / 4π
-
-# Stokes drift velocity at the surface
-const Uˢ = amplitude^2 * wavenumber * frequency # m s⁻¹
-uˢ(z) = Uˢ * exp(z / vertical_scale)
-∂z_uˢ(z, t) = 1 / vertical_scale * Uˢ * exp(z / vertical_scale)
-
-drag_weight = Oceananigans.CenterField(grid)
-drag_weights = repeat([drag_weight], n_kelp, n_seg)
-normalisations = repeat([1.0], n_kelp, n_seg)
-
+#Aᵤ = 7.00e-2, Aᵥ = 4.68e-2, ϕᵤ = 1.038, ϕᵥ = 3.80, t_central = 1.58e7, ω = 6.76e-5
 model = NonhydrostaticModel(; grid,
-                                advection = WENO(),
-                                timestepper = :RungeKutta3,
-                                closure = ScalarDiffusivity(ν=1e-4, κ=1e-4),
-                                boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
-                                forcing = (u = relax_U, v = relax_perp, w = relax_perp),
-                                particles=particles,
-                                #stokes_drift = UniformStokesDrift(∂z_uˢ=∂z_uˢ),
-                                auxiliary_fields = (;drag_weights, normalisations))
-set!(model, u=u₀)
+                              advection = CenteredSecondOrder(),
+                              timestepper = :RungeKutta3,
+                              closure = ScalarDiffusivity(κ = 1e-4, ν = 1e-4),
+                              forcing = (u = Forcing(tidal_forcing, parameters = (Aᵤ = 0.25, Aᵥ = 0.0, ϕᵤ = 0.0, ϕᵥ = 0.0, t_central = 0.0, ω = 6.76e-5)), ),
+                              boundary_conditions = (u = u_bcs, v = v_bcs, w = w_bcs),
+                              particles = particles,
+                              auxiliary_fields = (; drag_nodes))
 
-simulation = Simulation(model, Δt=0.5, stop_time=5minutes)
+uᵢ(x, y, z) = 0.25 * cos(6.76e-5 * 0.0)
+#vᵢ(x, y, z) = 4.68e-2 * cos(- 6.76e-5 * 1.58e7 - 3.80)
 
-simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
+set!(model, u = uᵢ, v = vᵢ)
 
-wizard = TimeStepWizard(cfl=1.0, max_change=1.1, max_Δt=0.25, diffusive_cfl=0.5)
+filepath = "forest_no_coupling"
+
+simulation = Simulation(model, Δt = 5.0, stop_time = 1year)
+
+#simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
+
+#wizard = TimeStepWizard(cfl = 0.5, max_change = 1.1, diffusive_cfl = 0.5)
 #simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
+
 progress_message(sim) = @printf("Iteration: %04d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, wall time: %s\n",
                                     iteration(sim), prettytime(sim), prettytime(sim.Δt),
                                     maximum(abs, sim.model.velocities.u), prettytime(sim.run_wall_time))
     
 simulation.callbacks[:progress] = Callback(progress_message, IterationInterval(20))
 
-filepath = "forest"
-
 simulation.output_writers[:profiles] =
-    JLD2OutputWriter(model, model.velocities,
+    JLD2OutputWriter(model, merge(model.velocities, model.tracers),
                          filename = "$filepath.jld2",
-                         schedule = IterationInterval(1),
+                         schedule = TimeInterval(1hour),
                          overwrite_existing = true)
 
 function store_particles!(sim)
@@ -123,106 +102,115 @@ function store_particles!(sim)
     end
 end
 
-simulation.callbacks[:save_particles] = Callback(store_particles!)
+#simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(0.1))
+#=
+using GLMakie
+
+fig = Figure(resolution = (2000, 2000/(Lx/Ly)))
+ax_u  = Axis(fig[1, 1]; xlabel="x (m)", ylabel="y (m)")
+getcol(z) = RGBAf.(0, 0, 0, (8 .+ z)./10 .+.2)
+function plot(sim)
+    model = sim.model
+    uₘ = maximum(abs, model.velocities.u[:, :, Nz] .- u₀)
+    hm = heatmap!(ax_u, grid.xᶜᵃᵃ[1:Nx], grid.yᵃᶜᵃ[1:Ny], model.velocities.u[1:Nx, 1:Ny, Nz] .- u₀, colorrange=(-uₘ, uₘ), colormap=:vik)
+    plt = plot!(ax_u, nodes.x⃗[:, 1] .+ 5, nodes.x⃗[:, 2] .+ 2, color=getcol.(nodes.x⃗[:, 3] .- 8))
+    fig
+end
+
+simulation.callbacks[:plot] = Callback(plot, IterationInterval(20))=#
 run!(simulation)
 #=
 file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])
-x⃗ = zeros(length(times), n_seg, 3)
+x⃗ = zeros(length(times), 8, 3)
 for (i, t) in enumerate(times)
     x⃗[i, :, :] = file["x⃗/$t"][1].x⃗
 end
+close(file)
+u = FieldTimeSeries("$filepath.jld2", "u") .- u₀;
 
-using GLMakie
-#=
-fig = Figure(resolution = (1000*maximum(x⃗[:, :, 1])/maximum(x⃗[:, :, 3]), 1000))
-ax  = Axis(fig[1, 1]; limits=((min(0, minimum(x⃗[:, :, 1])), maximum(x⃗[:, :, 1])), (min(0, minimum(x⃗[:, :, 3])), maximum(x⃗[:, :, 3]))), xlabel="x (m)", ylabel="z (m)", title="t=$(prettytime(0))", aspect = AxisAspect(maximum(x⃗[:, :, 1])/maximum(x⃗[:, :, 3])))
+using CairoMakie
 
-# animation settings
-nframes = length(times)
-framerate = floor(Int, nframes/30)
-frame_iterator = 1:nframes
+gx = [Lx/Nx:Lx/Nx:Lx;]
+gy = [Lx/Nx:Lx/Nx:Ly;]
+gz = [-Lz:Lx/Nx:Lx/Nx;]
 
-record(fig, "nodes_dragging.mp4", frame_iterator; framerate = framerate) do i
-    msg = string("Plotting frame ", i, " of ", nframes)
-    print(msg * " \r")
-    if !(i==1)
-        plot!(ax, x⃗[(i-1), :, 1], x⃗[(i-1), :, 3]; color=:white)
-    end
-    plot!(ax, x⃗[i, :, 1], x⃗[i, :, 3])
-    ax.title = "t=$(prettytime(parse(Float64, times[i])))"
-end=#
-
-fig = Figure(resolution = (500*grid.Lx/grid.Lz, 500))
-ax_u  = Axis(fig[1, 1]; title = "u", aspect = AxisAspect(grid.Lx/grid.Lz), xlabel="x (m)", ylabel="z (m)")
-u_plt = model.velocities.u[1:Nx, floor(Int, Ny/2), 1:Nz, end].-u₀
-uₘ = maximum(abs, u_plt)
-hmu = heatmap!(ax_u, grid.xᶠᵃᵃ[1:Nx], grid.zᵃᵃᶜ[1:Nz], u_plt, colormap=:vik, colorrange=(-uₘ, uₘ))
-Colorbar(fig[1, 2], hmu)
-scatter!(ax_u, model.particles.properties.nodes[1].x⃗[:, 1].+model.particles.properties.x[1], model.particles.properties.nodes[1].x⃗[:, 3].+model.particles.properties.z[1], color=:black, markersize=20)
-scatter!(ax_u, [model.particles.properties.x[1]], [model.particles.properties.z[1]], color=:black, markersize=20)
-save("vertical_u_slice.png", fig)
-
-pNz = Nz
-fig = Figure(resolution = (500*grid.Lx/grid.Ly, 500))
-ax_u  = Axis(fig[1, 1]; title = "u", aspect = AxisAspect(grid.Lx/grid.Ly), xlabel="x (m)", ylabel="y (m)")
-u_plt = model.velocities.u[1:Nx, 1:Ny, pNz, end].-u₀
-uₘ = maximum(abs, u_plt)
-hmu = heatmap!(ax_u, grid.xᶠᵃᵃ[1:Nx], grid.yᵃᶜᵃ[1:Ny], u_plt, colormap=:vik, colorrange=(-uₘ, uₘ))
-Colorbar(fig[1, 2], hmu)
-scatter!(ax_u, model.particles.properties.nodes[1].x⃗[:, 1].+model.particles.properties.x[1], model.particles.properties.nodes[1].x⃗[:, 2].+model.particles.properties.y[1], color=:black, markersize=20)
-scatter!(ax_u, [model.particles.properties.x[1]], [model.particles.properties.y[1]], color=:black, markersize=20)
-save("horizontal_u_slice.png", fig)
-
-fig = Figure(resolution = (1000, 500))
-ax_u  = Axis(fig[1, 1]; title = "u", xlabel="x (m)", ylabel="z (m)")
-lines!(ax_u, model.velocities.u[modf(fractional_x_index(25, Face(), grid))[2]+1, floor(Int, Ny/2), 1:Nz]./mean(model.velocities.u[modf(fractional_x_index(25, Face(), grid))[2]+1, floor(Int, Ny/2), 1:Nz]), grid.zᵃᵃᶜ[1:Nz])
-ax_v  = Axis(fig[2, 1]; title = "Horizontal profile at x=20m, z=0m", xlabel="y (m)", ylabel="u-u₀ (m/s)")
-lines!(ax_v, grid.yᵃᶜᵃ[1:Ny],  model.velocities.u[modf(fractional_x_index(20, Face(), grid))[2]+1, 1:Ny, Nz].-u₀)
-save("u_profiles.png", fig)
-
-u = FieldTimeSeries("$filepath.jld2", "u")
-u_plt = mean(u[1:Nx, 1:Ny, 1:Nz, :], dims=2)[:, 1, :, :].-u₀
-uₘ = maximum(abs, u_plt)
-
-fig = Figure(resolution = (500*grid.Lx/grid.Lz, 500))
-ax  = Axis(fig[1, 1]; aspect = AxisAspect(grid.Lx/grid.Lz), xlabel="x (m)", ylabel="z (m)")
+fig = Figure(resolution = (2000, 2000/(Lx/Lz)))
+ax  = Axis(fig[1, 1]; xlabel="x (m)", ylabel="z (m)", title="t=$(prettytime(0))", limits=(0, Lx, -Lz, 0))
 
 # animation settings
 nframes = length(times)
 framerate = floor(Int, nframes/30)
 frame_iterator = 1:nframes
 
-hmu = heatmap!(ax, grid.xᶠᵃᵃ[1:Nx], grid.zᵃᵃᶜ[1:Nz], u_plt[1:Nx, 1:Nz, 1], colormap=:vik, colorrange=(-uₘ, uₘ))
+n = Observable(1)
+x = @lift (x⃗ .+ 5.0)[$n, :, 1]
+y = @lift (x⃗ .+ 2.0)[$n, :, 2]
+z = @lift (x⃗ .- 8.0)[$n, :, 3]
+
+
+u_plt = @lift u[1:Nx, floor(Int, Ny/2), 1:Nz, $n]
+uₘ = maximum(abs, u[1:Nx, floor(Int, Ny/2), 1:Nz, :])
+hmu = heatmap!(ax, gx, gz, u_plt, colormap=:vik, colorrange=(-uₘ, uₘ))
 Colorbar(fig[1, 2], hmu)
-scatter!(ax, [particles.properties.x[1]], [particles.properties.z[1]], color=:black, markersize=20)
-
-record(fig, "dragging.mp4", frame_iterator; framerate = framerate) do i
-    msg = string("Plotting frame ", i, " of ", nframes)
-    print(msg * " \r")
-
-    hmu = heatmap!(ax, grid.xᶠᵃᵃ[1:Nx], grid.zᵃᵃᶜ[1:Nz], u_plt[1:Nx, 1:Nz, i], colormap=:vik, colorrange=(-uₘ, uₘ))
-    if !(i==1)
-        scatter!(ax, x⃗[i-1, :, 1].+particles.properties.x[1], x⃗[i-1, :, 3].+particles.properties.z[1], color=:white, markersize=20)
-    end
-    scatter!(ax, x⃗[i, :, 1].+particles.properties.x[1], x⃗[i, :, 3].+particles.properties.z[1], color=:black, markersize=20)
+plot!(ax, x, z)
+for i=1:8
+    lines!(ax, x⃗[:, i, 1].+5.0, x⃗[:, i, 3].-8.0)
+end
+CairoMakie.record(fig, "$(filepath)_vertical_slice.mp4", frame_iterator; framerate = framerate) do i
+    print("$i" * " \r")
+    n[] = i
     ax.title = "t=$(prettytime(parse(Float64, times[i])))"
 end
 
 
-fig = Figure(resolution = (500*grid.Lx/grid.Ly, 500))
-ax_u  = Axis(fig[1, 1]; aspect = AxisAspect(grid.Lx/grid.Ly), xlabel="x (m)", ylabel="y (m)")
-u_plt = u[1:Nx, 1:Ny, Nz, :] .-u₀
-uₘ = maximum(abs, u_plt)
-hmu = heatmap!(ax_u, grid.xᶠᵃᵃ[1:Nx], grid.yᵃᶜᵃ[1:Ny], u_plt[1:Nx, 1:Ny, 1], colormap=:vik, colorrange=(-uₘ, uₘ))
-Colorbar(fig[1, 2], hmu)
-scatter!(ax_u, x⃗[1, :, 1].+particles.properties.x[1], x⃗[1, :, 2].+particles.properties.y[1], color=:black, markersize=20)
-scatter!(ax_u, [particles.properties.x[1]], [particles.properties.y[1]], color=:black, markersize=20)
+n = Observable(1)
+fig = Figure(resolution = (2000, 2000/(.5*Lx/Ly)))
+ax_u  = Axis(fig[1, 1]; xlabel="x (m)", ylabel="y (m)")
+x = @lift (x⃗.+5)[$n, :, 1]
+y = @lift (x⃗.+2)[$n, :, 2]
+z = @lift (x⃗.-8)[$n, :, 3]
+colors = lift(getcol, z)
+u_plt = @lift u[1:Nx, 1:Ny, Nz, $n]
 
-record(fig, "horizontal_u.mp4", frame_iterator; framerate = framerate) do i
+uₘ = maximum(abs, u[1:Nx, 1:Ny, Nz, :])
+hmu = heatmap!(ax_u, gx, gy, u_plt, colormap=:vik, colorrange=(-uₘ, uₘ))
+Colorbar(fig[1, 2], hmu)
+
+plot!(ax_u, x, y, color=colors)
+CairoMakie.record(fig, "$(filepath)_horizontal_u.mp4", frame_iterator; framerate = framerate) do i
+    n[] = i
     msg = string("Plotting frame ", i, " of ", nframes)
     print(msg * " \r")
-    hmu = heatmap!(ax_u, grid.xᶠᵃᵃ[1:Nx], grid.yᵃᶜᵃ[1:Ny], u_plt[1:Nx, 1:Ny, i], colormap=:vik, colorrange=(-uₘ, uₘ))
-    scatter!(ax_u, x⃗[i, :, 1].+particles.properties.x[1], x⃗[i, :, 2].+particles.properties.y[1], color=:black, markersize=20)
     ax_u.title = "t=$(prettytime(parse(Float64, times[i])))"
-end=#
+end
+
+fig = Figure()
+
+z_xy = zeros(Float64, Nx, Ny)
+y_xz = ones(Float64, Nx, Nz).*2
+x_yz = zeros(Float64, Ny, Nz)
+
+ax = Axis3(fig[1, 1], aspect=(1, .5*Ly/Lx, Lz/Lx), limits=(0, Lx, Ly/2, Ly, -Lz, 0))
+
+u_plt_top = @lift u[1:Nx, 16:Ny, Nz, $n]
+sl1 = surface!(ax, gx, gy, z_xy; color=u_plt_top, colormap=:vik, colorrange=(0.0, 2.0))
+
+u_plt_west = @lift u[1, 16:Ny, 1:Nz, $n]
+sl2 = surface!(ax, x_yz, gy[16:end], gz; color=u_plt_west, colormap=:vik, colorrange=(0.0, 2.0))
+
+u_plt_center = @lift u[1:Nx, 16, 1:Nz, $n]
+sl3 = surface!(ax, gx, y_xz, gz; color=u_plt_center, colormap=:vik, colorrange=(0.0, 2.0))
+
+x = @lift (x⃗.+5)[$n, :, 1]
+y = @lift (x⃗.+2)[$n, :, 2]
+z = @lift (x⃗.-8)[$n, :, 3]
+
+plot!(ax, x, y, z)
+GLMakie.record(fig, "$(filepath)_3d_plot.mp4", frame_iterator; framerate = framerate) do i
+    n[] = i
+    msg = string("Plotting frame ", i, " of ", nframes)
+    print(msg * " \r")
+    ax.title = "t=$(prettytime(parse(Float64, times[i])))"
+end
+=#

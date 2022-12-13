@@ -15,7 +15,7 @@ grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(P
 
 nodes = Nodes(number = 8, depth = 8.0, l₀ = 0.6, architecture = arch)
 
-particle_struct = StructArray{GiantKelp}(([5.0], [2.0], [-8.0], [5.0], [2.0], [-8.0], [nodes]))
+particle_struct = StructArray{GiantKelp}(([5.0], [2.0], [-8.0], [5.0], [2.0], [-8.0], [1.0], [nodes]))
 
 @inline guassian_smoothing(r, rᵉ) = 1.0#exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
 

@@ -21,40 +21,40 @@ function x⃗₀(number, depth, l₀)
 end
 
 # ## Create the particles
-struct Nodes{VA, SA}
+struct Nodes{VF, SF, SI}
     # nodes
-    x⃗::VA# node positions relative to base
-    u⃗::VA # node velocities in rest frame of base
-    l⃗₀::SA # segment unstretched length
-    r⃗ˢ::SA # stipe radius
-    n⃗ᵇ::SA # number of bladdes
-    A⃗ᵇ::SA # area of individual blade
-    V⃗ᵖ::SA # volume of pneumatocysts assuming density is air so ∼ 0 kg/m³
-    r⃗ᵉ::SA # effective radius to drag over
+    x⃗::VF# node positions relative to base
+    u⃗::VF # node velocities in rest frame of base
+    l⃗₀::SF # segment unstretched length
+    r⃗ˢ::SF # stipe radius
+    n⃗ᵇ::SI # number of bladdes
+    A⃗ᵇ::SF # area of individual blade
+    V⃗ᵖ::SF # volume of pneumatocysts assuming density is air so ∼ 0 kg/m³
+    r⃗ᵉ::SF # effective radius to drag over
 
     # forces on nodes and force history
-    F⃗::VA
-    u⃗⁻::VA
-    F⃗⁻::VA
-    F⃗ᴰ::VA
+    F⃗::VF
+    u⃗⁻::VF
+    F⃗⁻::VF
+    F⃗ᴰ::VF
 
-    function Nodes(; number,
-                     depth,
-                     l₀ = 0.6,
-                     x⃗ = x⃗₀(number, depth, l₀),
-                     u⃗ = zeros(number, 3),
-                     l⃗₀ = 0.6 * ones(number),
-                     r⃗ˢ = 0.03 * ones(number),
-                     n⃗ᵇ = [i*50/number for i in 1:number],
-                     A⃗ᵇ = 0.1 * ones(number),
-                     V⃗ᵖ = 0.05 * ones(number),
-                     r⃗ᵉ = 0.5 * ones(number),
-                     architecture = CPU())
+    function Nodes(; number :: IT,
+                     depth :: FT,
+                     l₀ :: FT = 0.6,
+                     x⃗ :: VF = x⃗₀(number, depth, l₀),
+                     u⃗ :: VF= zeros(Float64, number, 3),
+                     l⃗₀ :: SF = 0.6 * ones(number),
+                     r⃗ˢ :: SF = 0.03 * ones(number),
+                     n⃗ᵇ :: SI = [i*50/number for i in 1:number],
+                     A⃗ᵇ :: SF = 0.1 * ones(number),
+                     V⃗ᵖ :: SF = 0.05 * ones(number),
+                     r⃗ᵉ :: SF = 0.5 * ones(number),
+                     architecture = CPU()) where {IT, FT, VF, SF, SI}
 
-        x⃗ = arch_array(architecture, x⃗)
+        #=x⃗ = arch_array(architecture, x⃗)
         u⃗ = arch_array(architecture, u⃗)
 
-        VA = typeof(x⃗)
+        VF = typeof(x⃗)
 
         l⃗₀ = arch_array(architecture, l⃗₀)
         r⃗ˢ = arch_array(architecture, r⃗ˢ)
@@ -63,13 +63,14 @@ struct Nodes{VA, SA}
         V⃗ᵖ = arch_array(architecture, V⃗ᵖ)
         r⃗ᵉ = arch_array(architecture, r⃗ᵉ)
 
-        SA = typeof(l⃗₀)
+        SF = typeof(l⃗₀)
+        SI = typeof(n⃗ᵦ)=#
 
-        F⃗ = arch_array(architecture, zeros(number, 3))
-        u⃗⁻ = arch_array(architecture, zeros(number, 3))
-        F⃗⁻ = arch_array(architecture, zeros(number, 3))
-        F⃗ᴰ = arch_array(architecture, zeros(number, 3))
-        return new{VA, SA}(x⃗, u⃗, l⃗₀, r⃗ˢ, n⃗ᵇ, A⃗ᵇ, V⃗ᵖ, r⃗ᵉ, F⃗, u⃗⁻, F⃗⁻, F⃗ᴰ)    
+        F⃗ = zeros(FT, number, 3)#arch_array(architecture, zeros(number, 3))
+        u⃗⁻ = zeros(FT, number, 3)#arch_array(architecture, zeros(number, 3))
+        F⃗⁻ = zeros(FT, number, 3)#arch_array(architecture, zeros(number, 3))
+        F⃗ᴰ = zeros(FT, number, 3)#arch_array(architecture, zeros(number, 3))
+        return new{VF, SF, SI}(x⃗, u⃗, l⃗₀, r⃗ˢ, n⃗ᵇ, A⃗ᵇ, V⃗ᵖ, r⃗ᵉ, F⃗, u⃗⁻, F⃗⁻, F⃗ᴰ)    
     end
 end
 
@@ -88,17 +89,10 @@ struct GiantKelp{FT, N}
     #information about nodes
     nodes::N
 
-    function GiantKelp(;x₀, y₀, z₀,
-                        scalefactor = 1.0,
+    function GiantKelp(;x₀::FT, y₀::FT, z₀::FT,
+                        scalefactor::FT = 1.0,
                         nodes::N = Nodes(number = 8, depth = 8.0, l₀ = 0.6),
-                        architecture = CPU()) where N
-
-        x₀ = arch_array(architecture, x₀)
-        y₀ = arch_array(architecture, y₀)
-        z₀ = arch_array(architecture, z₀)
-        scalefactor = arch_array(architecture, scalefactor)
-
-        FT = typeof(x₀)
+                        architecture = CPU()) where {FT, N}
 
         return new{FT, N}(x₀, y₀, z₀, x₀, y₀, z₀, scalefactor, nodes)
     end
@@ -131,26 +125,26 @@ end
 
     l = sqrt(dot(Δx, Δx))
 
-    Fᴮ = @inbounds (params.ρₒ-500)*node.V⃗ᵖ[i]*[0.0, 0.0, params.g] #currently assuming kelp is nutrally buoyant except for pneumatocysts
+    Fᴮ = @inbounds (params.ρₒ - 500) * node.V⃗ᵖ[i] * [0.0, 0.0, params.g] #currently assuming kelp is nutrally buoyant except for pneumatocysts
 
     if Fᴮ[3] > 0 && z >= 0  # i.e. floating up not sinking, and outside of the surface
         Fᴮ[3] = 0.0
     end
 
-    Vᵐ = π*node.r⃗ˢ[i]^2*l + node.n⃗ᵇ[i]*node.A⃗ᵇ[i]*0.01 # TODO: change thickness to some realistic thing
-    mᵉ = (Vᵐ + params.Cᵃ*(Vᵐ + node.V⃗ᵖ[i]))*params.ρₒ
+    Vᵐ = π * node.r⃗ˢ[i] ^ 2 * l + node.n⃗ᵇ[i] * node.A⃗ᵇ[i] * 0.01 # TODO: change thickness to some realistic thing
+    mᵉ = (Vᵐ + params.Cᵃ * (Vᵐ + node.V⃗ᵖ[i])) * params.ρₒ
 
     u⃗ʷ = [interpolate.(values(model.velocities), x, y, z)...]
     u⃗ᵣₑₗ = u⃗ʷ - (node.u⃗[i, :])
     sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
 
     a⃗ʷ = [interpolate.(values(model.timestepper.Gⁿ[(:u, :v, :w)]), x, y, z)...]
-    a⃗ᵣₑₗ = a⃗ʷ - @inbounds node.F⃗[i, :]./mᵉ
+    a⃗ᵣₑₗ = a⃗ʷ - @inbounds node.F⃗[i, :] ./ mᵉ
 
-    θ = acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx))/(sᵣₑₗ*l + eps(0.0))))
-    Aˢ = @inbounds 2*node.r⃗ˢ[i]*l*abs(sin(θ)) + π*node.r⃗ˢ[i]*abs(cos(θ))
+    θ = acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx)) / (sᵣₑₗ * l + eps(0.0))))
+    Aˢ = @inbounds 2 * node.r⃗ˢ[i] * l * abs(sin(θ)) + π*node.r⃗ˢ[i] * abs(cos(θ))
 
-    Fᴰ = .5*params.ρₒ*(params.Cᵈˢ*Aˢ + params.Cᵈᵇ*node.n⃗ᵇ[i]*node.A⃗ᵇ[i])*sᵣₑₗ.*u⃗ᵣₑₗ
+    Fᴰ = .5 * params.ρₒ * (params.Cᵈˢ * Aˢ + params.Cᵈᵇ * node.n⃗ᵇ[i] * node.A⃗ᵇ[i]) * sᵣₑₗ .* u⃗ᵣₑₗ
 
     if i==length(node.l⃗₀)
         x⃗⁺ = x⃗ - ones(3) # doesn't matter but needs to be non-zero
@@ -159,12 +153,12 @@ end
         l₀⁺ = @inbounds node.l⃗₀[i] # again, doesn't matter but probs shouldn't be zero
     else
         x⃗⁺ = @inbounds node.x⃗[i+1, :]
-        u⃗⁺ = @inbounds nodes.u⃗[i+1, :]
-        Aᶜ⁺ = @inbounds π*node.r⃗ˢ[i+1]^2
+        u⃗⁺ = @inbounds node.u⃗[i+1, :]
+        Aᶜ⁺ = @inbounds π*node.r⃗ˢ[i+1] ^ 2
         l₀⁺ = @inbounds node.l⃗₀[i+1]
     end
 
-    Aᶜ⁻ = @inbounds π*node.r⃗ˢ[i]^2
+    Aᶜ⁻ = @inbounds π*node.r⃗ˢ[i] ^ 2
     l₀⁻ = @inbounds node.l⃗₀[i]
 
     Δx⃗⁻ = x⃗⁻ - x⃗
@@ -177,13 +171,13 @@ end
     l⁻ = sqrt(dot(Δx⃗⁻, Δx⃗⁻))
     l⁺ = sqrt(dot(Δx⃗⁺, Δx⃗⁺))
 
-    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params).*Δx⃗⁻./(l⁻+eps(0.0)) + ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗⁻, zeros(3))
-    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params).*Δx⃗⁺./(l⁺+eps(0.0)) + ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗⁺, zeros(3))
+    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻+eps(0.0)) + ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗⁻, zeros(3))
+    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺+eps(0.0)) + ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗⁺, zeros(3))
 
-    Fⁱ = params.ρₒ*(Vᵐ+node.V⃗ᵖ[i]).*(params.Cᵃ*a⃗ᵣₑₗ + a⃗ʷ)
+    Fⁱ = params.ρₒ * (Vᵐ+node.V⃗ᵖ[i]) .* (params.Cᵃ * a⃗ᵣₑₗ + a⃗ʷ)
 
     @inbounds begin 
-        node.F⃗[i, :] = (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ)./mᵉ
+        node.F⃗[i, :] = (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ
         node.F⃗ᴰ[i, :] = Fᴰ + Fⁱ # store for back reaction onto water
         
         if any(isnan.(node.F⃗[i, :])) error("F is NaN: i=$i $(Fᴮ) .+ $(Fᴰ) .+ $(T⁻) .+ $(T⁺) at $x, $y, $z") end
