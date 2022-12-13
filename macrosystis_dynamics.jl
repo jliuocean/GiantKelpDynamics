@@ -4,40 +4,100 @@ using Oceananigans.Architectures: device, arch_array
 using Oceananigans.Fields: interpolate, fractional_x_index, fractional_y_index, fractional_z_index, fractional_indices
 using Oceananigans.Utils: work_layout
 using Oceananigans.Operators: Vᶜᶜᶜ
+using Oceananigans: CPU
 
 const rk3 = ((8//15, nothing), (5//12, -17//60), (3//4, -5//12))
 
-# ## Create the particles
-struct Nodes{X, U, L, R, N, A, V, RE, F, UM, FM, FD}
-    # nodes
-    x⃗::X# node positions relative to base
-    u⃗::U # node velocities in rest frame of base
-    l⃗₀::L # segment unstretched length
-    r⃗ˢ::R # stipe radius
-    n⃗ᵇ::N # number of bladdes
-    A⃗ᵇ::A # area of individual blade
-    V⃗ᵖ::V # volume of pneumatocysts assuming density is air so ∼ 0 kg/m³
-    r⃗ᵉ::RE # effective radius to drag over
-
-    # forces on nodes and force history
-    F⃗::F
-    u⃗⁻::UM
-    F⃗⁻::FM
-    F⃗ᴰ::FD
+function x⃗₀(number, depth, l₀)
+    x = zeros(number, 3)
+    for i in 1:number
+        if l₀ * i - depth < 0
+            x[i, 3] = l₀ * i
+        else
+            x[i, :] = [l₀ * i - depth, 0.0, depth]
+        end
+    end
+    return x
 end
 
-struct GiantKelp{X, Y, Z, X0, Y0, Z0, Nodes}
-    # origin position and velocity
-    x::X
-    y::Y
-    z::Z
+# ## Create the particles
+struct Nodes{VA, SA}
+    # nodes
+    x⃗::VA# node positions relative to base
+    u⃗::VA # node velocities in rest frame of base
+    l⃗₀::SA # segment unstretched length
+    r⃗ˢ::SA # stipe radius
+    n⃗ᵇ::SA # number of bladdes
+    A⃗ᵇ::SA # area of individual blade
+    V⃗ᵖ::SA # volume of pneumatocysts assuming density is air so ∼ 0 kg/m³
+    r⃗ᵉ::SA # effective radius to drag over
 
-    x₀::X0
-    y₀::Y0
-    z₀::Z0
+    # forces on nodes and force history
+    F⃗::VA
+    u⃗⁻::VA
+    F⃗⁻::VA
+    F⃗ᴰ::VA
+
+    function Nodes(; number,
+                     depth,
+                     l₀ = 0.6,
+                     x⃗ = x⃗₀(number, depth, l₀),
+                     u⃗ = zeros(number, 3),
+                     l⃗₀ = 0.6 * ones(number),
+                     r⃗ˢ = 0.03 * ones(number),
+                     n⃗ᵇ = [i*50/number for i in 1:number],
+                     A⃗ᵇ = 0.1 * ones(number),
+                     V⃗ᵖ = 0.05 * ones(number),
+                     r⃗ᵉ = 0.5 * ones(number),
+                     architecture = CPU())
+
+        x⃗ = arch_array(architecture, x⃗)
+        u⃗ = arch_array(architecture, u⃗)
+
+        VA = typeof(x⃗)
+
+        l⃗₀ = arch_array(architecture, l⃗₀)
+        r⃗ˢ = arch_array(architecture, r⃗ˢ)
+        n⃗ᵇ = arch_array(architecture, n⃗ᵇ)
+        A⃗ᵇ = arch_array(architecture, A⃗ᵇ)
+        V⃗ᵖ = arch_array(architecture, V⃗ᵖ)
+        r⃗ᵉ = arch_array(architecture, r⃗ᵉ)
+
+        SA = typeof(l⃗₀)
+
+        F⃗ = arch_array(architecture, zeros(number, 3))
+        u⃗⁻ = arch_array(architecture, zeros(number, 3))
+        F⃗⁻ = arch_array(architecture, zeros(number, 3))
+        F⃗ᴰ = arch_array(architecture, zeros(number, 3))
+        return new{VA, SA}(x⃗, u⃗, l⃗₀, r⃗ˢ, n⃗ᵇ, A⃗ᵇ, V⃗ᵖ, r⃗ᵉ, F⃗, u⃗⁻, F⃗⁻, F⃗ᴰ)    
+    end
+end
+
+struct GiantKelp{FT, N}
+    # origin position and velocity
+    x::FT
+    y::FT
+    z::FT
+
+    x₀::FT
+    y₀::FT
+    z₀::FT
 
     #information about nodes
-    nodes::Nodes
+    nodes::N
+
+    function GiantKelp(;x₀, y₀, z₀, 
+                        nodes::N = Nodes(number = 8, depth = 8.0, l₀ = 0.6),
+                        architecture = CPU()) where N
+
+        x₀ = arch_array(architecture, x₀)
+        y₀ = arch_array(architecture, y₀)
+        z₀ = arch_array(architecture, z₀)
+
+        FT = typeof(x₀)
+
+        return new{FT, N}(x₀, y₀, z₀, x₀, y₀, z₀, nodes)
+    end
 end
 
 @inline tension(Δx, l₀, Aᶜ, params) = Δx>l₀ && !(Δx==0.0)  ? params.k*((Δx- l₀)/l₀)^params.α*Aᶜ : 0.0
@@ -52,10 +112,13 @@ end
     node = @inbounds properties.nodes[p]
 
     x⃗ = @inbounds node.x⃗[i, :]
+    u⃗ = @inbounds node.u⃗[i, :]
     if i==1
         x⃗⁻ = zeros(3)
+        u⃗⁻ = zeros(3)
     else
         x⃗⁻ = @inbounds node.x⃗[i-1, :]
+        u⃗⁻ = @inbounds node.u⃗[i-1, :]
     end
 
     Δx = x⃗ - x⃗⁻
@@ -87,10 +150,12 @@ end
 
     if i==length(node.l⃗₀)
         x⃗⁺ = x⃗ - ones(3) # doesn't matter but needs to be non-zero
+        u⃗⁺ = zeros(3) # doesn't matter
         Aᶜ⁺ = 0.0 # doesn't matter
         l₀⁺ = @inbounds node.l⃗₀[i] # again, doesn't matter but probs shouldn't be zero
     else
         x⃗⁺ = @inbounds node.x⃗[i+1, :]
+        u⃗⁺ = @inbounds nodes.u⃗[i+1, :]
         Aᶜ⁺ = @inbounds π*node.r⃗ˢ[i+1]^2
         l₀⁺ = @inbounds node.l⃗₀[i+1]
     end
@@ -101,11 +166,15 @@ end
     Δx⃗⁻ = x⃗⁻ - x⃗
     Δx⃗⁺ = x⃗⁺ - x⃗
 
-    Δx⁻ = sqrt(dot(Δx⃗⁻, Δx⃗⁻))
-    Δx⁺ = sqrt(dot(Δx⃗⁺, Δx⃗⁺))
+    Δu⃗⁻ = u⃗⁻ - u⃗
+    Δu⃗⁺ = u⃗⁺ - u⃗
 
-    T⁻ = tension(sqrt(dot(Δx⃗⁻, Δx⃗⁻)), l₀⁻, Aᶜ⁻, params).*Δx⃗⁻./(Δx⁻+eps(0.0))
-    T⁺ = tension(sqrt(dot(Δx⃗⁺, Δx⃗⁺)), l₀⁺, Aᶜ⁺, params).*Δx⃗⁺./(Δx⁺+eps(0.0))
+
+    l⁻ = sqrt(dot(Δx⃗⁻, Δx⃗⁻))
+    l⁺ = sqrt(dot(Δx⃗⁺, Δx⃗⁺))
+
+    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params).*Δx⃗⁻./(l⁻+eps(0.0)) + ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗⁻, zeros(3))
+    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params).*Δx⃗⁺./(l⁺+eps(0.0)) + ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗⁺, zeros(3))
 
     Fⁱ = params.ρₒ*(Vᵐ+node.V⃗ᵖ[i]).*(params.Cᵃ*a⃗ᵣₑₗ + a⃗ʷ)
 
@@ -116,13 +185,13 @@ end
         if any(isnan.(node.F⃗[i, :])) error("F is NaN: i=$i $(Fᴮ) .+ $(Fᴰ) .+ $(T⁻) .+ $(T⁺) at $x, $y, $z") end
 
         # Think its possibly reassigning the same values on top of eachother?
-        #node.u⃗⁻[i, :] = node.u⃗[i, :]
-        #node.u⃗[i, :] += rk3_substep(node.F⃗[i, :], node.F⃗⁻[i, :], Δt, γ, ζ)
-        node.u⃗[i, :] += node.F⃗[i, :]*Δt
-        #node.F⃗⁻[i, :] = node.F⃗[i, :]
+        node.u⃗⁻[i, :] .= node.u⃗[i, :]
+        node.u⃗[i, :] .+= rk3_substep(node.F⃗[i, :], node.F⃗⁻[i, :], Δt, γ, ζ)
+        #node.u⃗[i, :] += node.F⃗[i, :]*Δt
+        node.F⃗⁻[i, :] .= node.F⃗[i, :]
 
-        #node.x⃗[i, :] += rk3_substep(node.u⃗[i, :], node.u⃗⁻[i, :], Δt, γ, ζ)
-        node.x⃗[i, :] += node.u⃗[i, :]*Δt
+        node.x⃗[i, :] .+= rk3_substep(node.u⃗[i, :], node.u⃗⁻[i, :], Δt, γ, ζ)
+        #node.x⃗[i, :] += node.u⃗[i, :]*Δt
 
         if node.x⃗[i, 3] + properties.z[p] > 0.0 #given above bouyancy conditions this should never be possible (assuming a flow with zero vertical velocity at the surface, i.e. a real one)
             node.x⃗[i, 3] = -properties.z[p]
@@ -149,11 +218,14 @@ function kelp_dynamics!(particles, model, Δt)
     worksize = (n_particles, n_nodes)
     workgroup = (1, min(256, worksize[1]))
 
-    for (γ, ζ) in rk3
-        step_node_kernel! = step_node!(device(model.architecture), workgroup, worksize)
-        step_node_event = step_node_kernel!(particles.properties, model, Δt, γ, ζ, particles.parameters)
-        wait(step_node_event)
-    end
+    #for substep in 1:1
+        for (γ, ζ) in rk3
+        #γ, ζ = 1.0, 1.0
+            step_node_kernel! = step_node!(device(model.architecture), workgroup, worksize)
+            step_node_event = step_node_kernel!(particles.properties, model, Δt/10, γ, ζ, particles.parameters)
+            wait(step_node_event)
+        end
+    #end
 end
 
 struct LocalTransform{X, RZ, RX, RN, RP}
