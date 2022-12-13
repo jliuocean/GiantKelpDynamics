@@ -51,10 +51,10 @@ struct Nodes{VF, SF, SI}
                      r⃗ᵉ :: SF = 0.5 * ones(number),
                      architecture = CPU()) where {IT, FT, VF, SF, SI}
 
-        #=x⃗ = arch_array(architecture, x⃗)
+        x⃗ = arch_array(architecture, x⃗)
         u⃗ = arch_array(architecture, u⃗)
 
-        VF = typeof(x⃗)
+        VFF = typeof(x⃗)
 
         l⃗₀ = arch_array(architecture, l⃗₀)
         r⃗ˢ = arch_array(architecture, r⃗ˢ)
@@ -63,14 +63,14 @@ struct Nodes{VF, SF, SI}
         V⃗ᵖ = arch_array(architecture, V⃗ᵖ)
         r⃗ᵉ = arch_array(architecture, r⃗ᵉ)
 
-        SF = typeof(l⃗₀)
-        SI = typeof(n⃗ᵦ)=#
+        SFF = typeof(l⃗₀)
+        SIF = typeof(n⃗ᵇ)
 
         F⃗ = zeros(FT, number, 3)#arch_array(architecture, zeros(number, 3))
         u⃗⁻ = zeros(FT, number, 3)#arch_array(architecture, zeros(number, 3))
         F⃗⁻ = zeros(FT, number, 3)#arch_array(architecture, zeros(number, 3))
         F⃗ᴰ = zeros(FT, number, 3)#arch_array(architecture, zeros(number, 3))
-        return new{VF, SF, SI}(x⃗, u⃗, l⃗₀, r⃗ˢ, n⃗ᵇ, A⃗ᵇ, V⃗ᵖ, r⃗ᵉ, F⃗, u⃗⁻, F⃗⁻, F⃗ᴰ)    
+        return new{VFF, SFF, SIF}(x⃗, u⃗, l⃗₀, r⃗ˢ, n⃗ᵇ, A⃗ᵇ, V⃗ᵖ, r⃗ᵉ, F⃗, u⃗⁻, F⃗⁻, F⃗ᴰ)    
     end
 end
 

@@ -2,11 +2,17 @@ using Oceananigans, StructArrays, Printf, JLD2, Statistics, CUDA
 using Oceananigans.Units
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_w_from_continuity!
 using Oceananigans.Grids: xnodes, ynodes
+using Oceananigans.Architectures: arch_array
 
 include("macrosystis_dynamics.jl")
 
 arch = CUDA.has_cuda_gpu() ? Oceananigans.GPU() : Oceananigans.CPU()
 
+if arch == Oceananigans.CPU()
+    adapt_array(x) = x
+else
+    adapt_array(x) = CuArray(x)
+end
 # ## Setup grid 
 Lx, Ly, Lz = 1kilometers, 1kilometers, 8
 Nx, Ny, Nz = 256, 256, 8
@@ -20,7 +26,7 @@ smoothing_disance = 3.0
 kelp_x = zeros(Float64, 0)
 kelp_y = zeros(Float64, 0)
 kelp_sf = zeros(Float64, 0)
-kelp_nodes = []
+kelp_nodes = Vector{Nodes}()
 
 for x in xnodes(Center, grid), y in ynodes(Center, grid)
     r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
@@ -29,13 +35,13 @@ for x in xnodes(Center, grid), y in ynodes(Center, grid)
         push!(kelp_x, x)
         push!(kelp_y, y)
         push!(kelp_sf, scalefactor)
-        push!(kelp_nodes, Nodes(number = 8, depth = 8.0))
+        push!(kelp_nodes, Nodes(number = 8, depth = 8.0, architecture = arch))
     end
 end
 
 n_kelp = length(kelp_x)
 
-particle_struct = StructArray{GiantKelp}((zeros(Float64, n_kelp), zeros(Float64, n_kelp), zeros(Float64, n_kelp), kelp_x, kelp_y, ones(n_kelp) .* -8.0, kelp_sf, kelp_nodes));
+particle_struct = StructArray{GiantKelp}((adapt_array(zeros(Float64, n_kelp)), adapt_array(zeros(Float64, n_kelp)), adapt_array(zeros(Float64, n_kelp)), adapt_array(kelp_x), adapt_array(kelp_y), adapt_array(ones(n_kelp) .* -8.0), adapt_array(kelp_sf), kelp_nodes));
 
 @inline guassian_smoothing(r, rᵉ) = 1.0#exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
 
@@ -47,11 +53,11 @@ particles = LagrangianParticles(particle_struct;
                                               ρₐ = 1.225, 
                                               g = 9.81, 
                                               Cᵈˢ = 1.0, 
-                                              Cᵈᵇ= 0.4 * 12 ^ (-0.485), 
+                                              Cᵈᵇ= 0.4 * 12 ^ -0.485, 
                                               Cᵃ = 3.0,
                                               drag_smoothing = guassian_smoothing,
                                               n_nodes = 8,
-                                              kᵈ = 10 ^ 3)) # for a linear spring system, to be non-oscillatory we need kᵈ>√k
+                                              kᵈ = 0.5 * 10 ^ 3)) # for a linear spring system, to be non-oscillatory we need kᵈ>√k
 
 drag_nodes = CenterField(grid)
 
@@ -64,7 +70,7 @@ w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
 model = NonhydrostaticModel(; grid,
                               advection = CenteredSecondOrder(),
                               timestepper = :RungeKutta3,
-                              closure = ScalarDiffusivity(κ = 1e-4, ν = 1e-4),
+                              closure = AnisotropicMinimumDissipation(),
                               forcing = (u = Forcing(tidal_forcing, parameters = (Aᵤ = 0.25, Aᵥ = 0.0, ϕᵤ = 0.0, ϕᵥ = 0.0, t_central = 0.0, ω = 6.76e-5)), ),
                               boundary_conditions = (u = u_bcs, v = v_bcs, w = w_bcs),
                               particles = particles,
@@ -73,7 +79,7 @@ model = NonhydrostaticModel(; grid,
 uᵢ(x, y, z) = 0.25 * cos(6.76e-5 * 0.0)
 #vᵢ(x, y, z) = 4.68e-2 * cos(- 6.76e-5 * 1.58e7 - 3.80)
 
-set!(model, u = uᵢ, v = vᵢ)
+set!(model, u = uᵢ)
 
 filepath = "forest_no_coupling"
 
@@ -84,9 +90,9 @@ simulation = Simulation(model, Δt = 5.0, stop_time = 1year)
 #wizard = TimeStepWizard(cfl = 0.5, max_change = 1.1, diffusive_cfl = 0.5)
 #simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
 
-progress_message(sim) = @printf("Iteration: %04d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, wall time: %s\n",
+progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, min(|u|) = %.1e ms⁻¹, wall time: %s\n",
                                     iteration(sim), prettytime(sim), prettytime(sim.Δt),
-                                    maximum(abs, sim.model.velocities.u), prettytime(sim.run_wall_time))
+                                    maximum(abs, sim.model.velocities.u), minimum(abs, sim.model.velocities.u), prettytime(sim.run_wall_time))
     
 simulation.callbacks[:progress] = Callback(progress_message, IterationInterval(20))
 
