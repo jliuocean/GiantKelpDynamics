@@ -83,20 +83,24 @@ struct GiantKelp{FT, N}
     y₀::FT
     z₀::FT
 
+    scalefactor::FT
+
     #information about nodes
     nodes::N
 
-    function GiantKelp(;x₀, y₀, z₀, 
+    function GiantKelp(;x₀, y₀, z₀,
+                        scalefactor = 1.0,
                         nodes::N = Nodes(number = 8, depth = 8.0, l₀ = 0.6),
                         architecture = CPU()) where N
 
         x₀ = arch_array(architecture, x₀)
         y₀ = arch_array(architecture, y₀)
         z₀ = arch_array(architecture, z₀)
+        scalefactor = arch_array(architecture, scalefactor)
 
         FT = typeof(x₀)
 
-        return new{FT, N}(x₀, y₀, z₀, x₀, y₀, z₀, nodes)
+        return new{FT, N}(x₀, y₀, z₀, x₀, y₀, z₀, scalefactor, nodes)
     end
 end
 
@@ -268,22 +272,23 @@ end
     @inbounds drag_nodes[i, j, k] = ifelse((r<rᵉ)&(-l⁻<z_<l⁺), particles.parameters.drag_smoothing(r, rᵉ), drag_nodes[i, j, k])
 end
 
-@kernel function apply_drag!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisations, particles, grid, F⃗ᴰ)
+@kernel function apply_drag!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisations, particles, grid, F⃗ᴰ, scalefactor)
     i, j, k = @index(Global, NTuple)
 
     vol = Vᶜᶜᶜ(i, j, k, grid)
     inverse_effective_mass = @inbounds drag_nodes[i, j, k]/(normalisations*vol*particles.parameters.ρₒ)
     if any(isnan.(F⃗ᴰ.*inverse_effective_mass)) error("NaN from $F⃗ᴰ, $normalisations * $vol * .../$(drag_nodes[i, j, k])") end
     @inbounds begin
-        Gᵘ[i, j, k] -= F⃗ᴰ[1]*inverse_effective_mass
-        Gᵛ[i, j, k] -= F⃗ᴰ[2]*inverse_effective_mass
-        Gʷ[i, j, k] -= F⃗ᴰ[3]*inverse_effective_mass
+        Gᵘ[i, j, k] -= F⃗ᴰ[1] * inverse_effective_mass * scalefactor
+        Gᵛ[i, j, k] -= F⃗ᴰ[2] * inverse_effective_mass * scalefactor
+        Gʷ[i, j, k] -= F⃗ᴰ[3] * inverse_effective_mass * scalefactor
     end
 end
 
 @kernel function drag_node!(particles, properties, grid, drag_nodes, n_nodes, Gᵘ, Gᵛ, Gʷ, node_weights_kernel!, apply_drag_kernel!)
     p, n = @index(Global, NTuple)
     node = @inbounds properties.nodes[p]
+    scalefactor = properties.scalefactor[p]
 
     # get node positions and size
     @inbounds begin
@@ -341,13 +346,13 @@ end
         i, j, k = floor.(Int, (i, j, k))
         vol = Vᶜᶜᶜ(i, j, k, model.grid)
         inverse_effective_mass = @inbounds 1/(vol*particles.parameters.ρₒ)
-        Gᵘ[i, j, k] -= F⃗ᴰ[1]*inverse_effective_mass
-        Gᵛ[i, j, k] -= F⃗ᴰ[2]*inverse_effective_mass
-        Gʷ[i, j, k] -= F⃗ᴰ[3]*inverse_effective_mass
+        Gᵘ[i, j, k] -= F⃗ᴰ[1] * inverse_effective_mass * scalefactor
+        Gᵛ[i, j, k] -= F⃗ᴰ[2] * inverse_effective_mass * scalefactor
+        Gʷ[i, j, k] -= F⃗ᴰ[3] * inverse_effective_mass * scalefactor
 
         @warn "Used fallback drag application as stencil found no nodes, this should be concerning if not in the initial transient response at $p, $n"
     else
-        apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisation, particles, grid, F⃗ᴰ)
+        apply_drag_event = apply_drag_kernel!(Gᵘ, Gᵛ, Gʷ, drag_nodes, normalisation, particles, grid, F⃗ᴰ, scalefactor)
         wait(apply_drag_event)
     end
 end
