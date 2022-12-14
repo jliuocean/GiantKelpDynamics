@@ -35,11 +35,11 @@ end
 
 particle_struct = StructArray(kelps);=#
 
-x = Float64[]
-y = Float64[]
-x0 = Float64[]
-y0 = Float64[]
-sf = Float64[]
+x = Vector{Float64}()
+y = Vector{Float64}()
+x0 = Vector{Float64}()
+y0 = Vector{Float64}()
+sf = Vector{Float64}()
 
 for x in xnodes(Center, grid), y in ynodes(Center, grid)
     r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
