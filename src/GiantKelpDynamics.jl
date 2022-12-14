@@ -24,179 +24,194 @@ function x⃗₀(number, depth, l₀)
     return x
 end
 
-# ## Create the particles
-struct Nodes{VF, SF, SI}
-    # nodes
-    x⃗::VF# node positions relative to base
-    u⃗::VF # node velocities in rest frame of base
-    l⃗₀::SF # segment unstretched length
-    r⃗ˢ::SF # stipe radius
-    n⃗ᵇ::SI # number of bladdes
-    A⃗ᵇ::SF # area of individual blade
-    V⃗ᵖ::SF # volume of pneumatocysts assuming density is air so ∼ 0 kg/m³
-    r⃗ᵉ::SF # effective radius to drag over
-
-    # forces on nodes and force history
-    F⃗::VF
-    u⃗⁻::VF
-    F⃗⁻::VF
-    F⃗ᴰ::VF
-
-    function Nodes(; number :: IT,
-                     depth :: FT,
-                     l₀ :: FT = 0.6,
-                     x⃗ :: VF = x⃗₀(number, depth, l₀),
-                     u⃗ :: VF= zeros(Float64, number, 3),
-                     l⃗₀ :: SF = 0.6 * ones(number),
-                     r⃗ˢ :: SF = 0.03 * ones(number),
-                     n⃗ᵇ :: SI = [i*50/number for i in 1:number],
-                     A⃗ᵇ :: SF = 0.1 * ones(number),
-                     V⃗ᵖ :: SF = 0.05 * ones(number),
-                     r⃗ᵉ :: SF = 0.5 * ones(number),
-                     architecture = CPU()) where {IT, FT, VF, SF, SI}
-
-        x⃗ = arch_array(architecture, x⃗)
-        u⃗ = arch_array(architecture, u⃗)
-
-        VFF = typeof(x⃗)
-
-        l⃗₀ = arch_array(architecture, l⃗₀)
-        r⃗ˢ = arch_array(architecture, r⃗ˢ)
-        n⃗ᵇ = arch_array(architecture, n⃗ᵇ)
-        A⃗ᵇ = arch_array(architecture, A⃗ᵇ)
-        V⃗ᵖ = arch_array(architecture, V⃗ᵖ)
-        r⃗ᵉ = arch_array(architecture, r⃗ᵉ)
-
-        SFF = typeof(l⃗₀)
-        SIF = typeof(n⃗ᵇ)
-
-        F⃗ = zeros(FT, number, 3)#arch_array(architecture, zeros(number, 3))
-        u⃗⁻ = zeros(FT, number, 3)#arch_array(architecture, zeros(number, 3))
-        F⃗⁻ = zeros(FT, number, 3)#arch_array(architecture, zeros(number, 3))
-        F⃗ᴰ = zeros(FT, number, 3)#arch_array(architecture, zeros(number, 3))
-        return new{VFF, SFF, SIF}(x⃗, u⃗, l⃗₀, r⃗ˢ, n⃗ᵇ, A⃗ᵇ, V⃗ᵖ, r⃗ᵉ, F⃗, u⃗⁻, F⃗⁻, F⃗ᴰ)    
-    end
-end
-
-struct GiantKelp{FT, N}
+struct GiantKelp{FT, VF, SF}
     # origin position and velocity
-    x::FT
-    y::FT
-    z::FT
+    x :: FT
+    y :: FT
+    z :: FT
 
-    x₀::FT
-    y₀::FT
-    z₀::FT
+    fixed_x :: FT
+    fixed_y :: FT
+    fixed_z :: FT
 
     scalefactor::FT
 
     #information about nodes
-    nodes::N
+    node_positions :: VF
+    node_velocities :: VF 
+    node_relaxed_lengths :: SF
+    node_stipe_radii :: SF 
+    node_blade_areas :: SF
+    node_pneumatocyst_volumes :: SF # assuming density is air so ∼ 0 kg/m³
+    node_effective_radius :: SF # effective radius to drag over
 
-    function GiantKelp(;x₀::FT, y₀::FT, z₀::FT,
-                        scalefactor::FT = 1.0,
-                        nodes::N = Nodes(number = 8, depth = 8.0, l₀ = 0.6),
-                        architecture = CPU()) where {FT, N}
+    # forces on nodes and force history
+    node_accelerations :: VF
+    node_old_velocities :: VF
+    node_old_accelerations :: VF
+    node_drag_force :: VF
 
-        return new{FT, N}(x₀, y₀, z₀, x₀, y₀, z₀, scalefactor, nodes)
+    function GiantKelp(; base_x::FT, base_y::FT, base_z::FT,
+                         scalefactor::FT = 1.0,
+                         number_nodes :: IT = 8,
+                         depth :: FT = 8.0,
+                         segment_unstretched_length :: FT = 0.6,
+                         node_positions :: VF = x⃗₀(number_nodes, depth, segment_unstretched_length),
+                         node_velocities :: VF= zeros(Float64, number_nodes, 3),
+                         node_relaxed_lengths :: SF = segment_unstretched_length * ones(number_nodes),
+                         node_stipe_radii :: SF = 0.03 * ones(number_nodes),
+                         node_blade_areas :: SF = 0.1 .* [i*50/number_nodes for i in 1:number_nodes],
+                         node_pneumatocyst_volumes :: SF = 0.05 * ones(number_nodes),
+                         node_effective_radius :: SF = 0.5 * ones(number_nodes),
+                         architecture = CPU()) where {IT, FT, VF, SF}
+
+        # some of this mess is redundant from trying to make GPU work
+        node_positions = arch_array(architecture, node_positions)
+        node_velocities = arch_array(architecture, node_velocities)
+
+        VFF = typeof(node_positions) # float vector array type
+
+        node_relaxed_lengths = arch_array(architecture, node_relaxed_lengths)
+        node_stipe_radii = arch_array(architecture, node_stipe_radii)
+        node_blade_areas = arch_array(architecture, node_blade_areas)
+        node_pneumatocyst_volumes = arch_array(architecture, node_pneumatocyst_volumes)
+        node_effective_radius = arch_array(architecture, node_effective_radius)
+
+        SFF = typeof(node_relaxed_lengths) # float scalar array type
+
+        node_accelerations = arch_array(architecture, zeros(FT, number_nodes, 3))
+        node_old_velocities = arch_array(architecture, zeros(FT, number_nodes, 3))
+        node_old_accelerations = arch_array(architecture, zeros(FT, number_nodes, 3))
+        node_drag_forces = arch_array(architecture, zeros(FT, number_nodes, 3))
+
+        return new{FT, VFF, SFF}(base_x, base_y, base_z, 
+                                 base_x, base_y, base_z, 
+                                 scalefactor, 
+                                 node_positions, 
+                                 node_velocities, 
+                                 node_relaxed_lengths,
+                                 node_stipe_radii,
+                                 node_blade_areas, 
+                                 node_pneumatocyst_volumes, 
+                                 node_effective_radius, 
+                                 node_accelerations, 
+                                 node_old_velocities, 
+                                 node_old_accelerations, 
+                                 node_drag_forces)
     end
 end
 
-@inline tension(Δx, l₀, Aᶜ, params) = Δx>l₀ && !(Δx==0.0)  ? params.k*((Δx- l₀)/l₀)^params.α*Aᶜ : 0.0
+@inline tension(Δx, l₀, Aᶜ, params) = Δx>l₀ && !(Δx==0.0)  ? params.k * ((Δx - l₀) / l₀) ^ params.α * Aᶜ : 0.0
 
 # TODO: need to reconsile the location of the velocity field being used, the drag, and the elasticity
 # Currently the elasticity acts on the nodes, while the velocity field is interpolated at the midpoint
 # of the segments and the drag is exerted on the water around the segments
 
-@kernel function step_node!(properties, model, Δt, γ, ζ, params)
+@kernel function step_node!(x_base, y_base, z_base, 
+                            node_positions, 
+                            node_velocities, 
+                            node_pneumatocyst_volumes, 
+                            node_stipe_radii, 
+                            node_blade_areas,
+                            node_relaxed_lengths, 
+                            node_accelerations, 
+                            node_drag_forces, 
+                            node_old_velocities,
+                            node_old_accelerations, 
+                            water_velocities, 
+                            water_acceleration, 
+                            Δt, γ, ζ, params)
+
     p, i = @index(Global, NTuple)
 
-    node = @inbounds properties.nodes[p]
+    x⃗ⁱ = @inbounds node_positions[p][i, :]
+    u⃗ⁱ = @inbounds node_velocities[p][i, :]
 
-    x⃗ = @inbounds node.x⃗[i, :]
-    u⃗ = @inbounds node.u⃗[i, :]
-    if i==1
+    if i == 1
         x⃗⁻ = zeros(3)
-        u⃗⁻ = zeros(3)
+        u⃗ⁱ⁻¹ = zeros(3)
     else
-        x⃗⁻ = @inbounds node.x⃗[i-1, :]
-        u⃗⁻ = @inbounds node.u⃗[i-1, :]
+        x⃗⁻ = @inbounds node_positions[p][i-1, :]
+        u⃗ⁱ⁻¹ = @inbounds node_velocities[p][i-1, :]
     end
 
-    Δx = x⃗ - x⃗⁻
+    Δx⃗ = x⃗ⁱ - x⃗⁻
 
-    x, y, z = @inbounds [properties.x[p], properties.y[p], properties.z[p]] + x⃗
+    x, y, z = @inbounds [x_base[p], y_base[p], z_base[p]] + x⃗ⁱ
 
-    l = sqrt(dot(Δx, Δx))
+    l = sqrt(dot(Δx⃗, Δx⃗))
+    Vᵖ = node_pneumatocyst_volumes[p][i]
 
-    Fᴮ = @inbounds (params.ρₒ - 500) * node.V⃗ᵖ[i] * [0.0, 0.0, params.g] #currently assuming kelp is nutrally buoyant except for pneumatocysts
+    Fᴮ = @inbounds (params.ρₒ - 500) * Vᵖ * [0.0, 0.0, params.g] #currently assuming kelp is nutrally buoyant except for pneumatocysts
 
-    if Fᴮ[3] > 0 && z >= 0  # i.e. floating up not sinking, and outside of the surface
+    if Fᴮ[3] > 0 && zⁱ >= 0  # i.e. floating up not sinking, and outside of the surface
         Fᴮ[3] = 0.0
     end
 
-    Vᵐ = π * node.r⃗ˢ[i] ^ 2 * l + node.n⃗ᵇ[i] * node.A⃗ᵇ[i] * 0.01 # TODO: change thickness to some realistic thing
-    mᵉ = (Vᵐ + params.Cᵃ * (Vᵐ + node.V⃗ᵖ[i])) * params.ρₒ
+    Aᵇ = node_blade_areas[p][i]
+    rˢ = node_stipe_radii[p][i]
+    Vᵐ = π * rˢ ^ 2 * l + Aᵇ * 0.01 # TODO: change thickness to some realistic thing
+    mᵉ = (Vᵐ + params.Cᵃ * (Vᵐ + Vᵖ)) * params.ρₒ
 
-    u⃗ʷ = [interpolate.(values(model.velocities), x, y, z)...]
-    u⃗ᵣₑₗ = u⃗ʷ - (node.u⃗[i, :])
+    u⃗ʷ = [interpolate.(values(water_velocities), x, y, z)...]
+    u⃗ᵣₑₗ = u⃗ʷ - u⃗ⁱ
     sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
 
-    a⃗ʷ = [interpolate.(values(model.timestepper.Gⁿ[(:u, :v, :w)]), x, y, z)...]
-    a⃗ᵣₑₗ = a⃗ʷ - @inbounds node.F⃗[i, :] ./ mᵉ
+    a⃗ʷ = [interpolate.(values(water_acceleration), x, y, z)...]
+    a⃗ⁱ = node_accelerations[p][i, :]
+    a⃗ᵣₑₗ = a⃗ʷ - a⃗ⁱ
 
-    θ = acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx)) / (sᵣₑₗ * l + eps(0.0))))
-    Aˢ = @inbounds 2 * node.r⃗ˢ[i] * l * abs(sin(θ)) + π*node.r⃗ˢ[i] * abs(cos(θ))
+    θ = acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx⃗)) / (sᵣₑₗ * l + eps(0.0))))
+    Aˢ = @inbounds 2 * rˢ * l * abs(sin(θ)) + π * rˢ * abs(cos(θ))
 
-    Fᴰ = .5 * params.ρₒ * (params.Cᵈˢ * Aˢ + params.Cᵈᵇ * node.n⃗ᵇ[i] * node.A⃗ᵇ[i]) * sᵣₑₗ .* u⃗ᵣₑₗ
+    Fᴰ = .5 * params.ρₒ * (params.Cᵈˢ * Aˢ + params.Cᵈᵇ * Aᵇ) * sᵣₑₗ .* u⃗ᵣₑₗ
 
-    if i==length(node.l⃗₀)
-        x⃗⁺ = x⃗ - ones(3) # doesn't matter but needs to be non-zero
-        u⃗⁺ = zeros(3) # doesn't matter
+    if i == length(l⃗₀)
+        x⃗⁺ = x⃗ⁱ - ones(3) # doesn't matter but needs to be non-zero
+        u⃗ⁱ⁺¹ = zeros(3) # doesn't matter
         Aᶜ⁺ = 0.0 # doesn't matter
-        l₀⁺ = @inbounds node.l⃗₀[i] # again, doesn't matter but probs shouldn't be zero
+        l₀⁺ = @inbounds l⃗₀[p][i] # again, doesn't matter but probs shouldn't be zero
     else
-        x⃗⁺ = @inbounds node.x⃗[i+1, :]
-        u⃗⁺ = @inbounds node.u⃗[i+1, :]
-        Aᶜ⁺ = @inbounds π*node.r⃗ˢ[i+1] ^ 2
-        l₀⁺ = @inbounds node.l⃗₀[i+1]
+        x⃗⁺ = @inbounds node_positions[p][i+1, :]
+        u⃗ⁱ⁺¹ = @inbounds node_velocities[p][i+1, :]
+        Aᶜ⁺ = @inbounds π * r⃗ˢ[p][i+1] ^ 2
+        l₀⁺ = @inbounds l⃗₀[p][i+1]
     end
 
-    Aᶜ⁻ = @inbounds π*node.r⃗ˢ[i] ^ 2
-    l₀⁻ = @inbounds node.l⃗₀[i]
+    Aᶜ⁻ = @inbounds π * rˢ ^ 2
+    l₀⁻ = @inbounds l⃗₀[p][i]
 
-    Δx⃗⁻ = x⃗⁻ - x⃗
-    Δx⃗⁺ = x⃗⁺ - x⃗
+    Δx⃗⁻ = x⃗⁻ - x⃗ⁱ
+    Δx⃗⁺ = x⃗⁺ - x⃗ⁱ
 
-    Δu⃗⁻ = u⃗⁻ - u⃗
-    Δu⃗⁺ = u⃗⁺ - u⃗
-
+    Δu⃗ⁱ⁻¹ = u⃗ⁱ⁻¹ - u⃗ⁱ
+    Δu⃗ⁱ⁺¹ = u⃗ⁱ⁺¹ - u⃗ⁱ
 
     l⁻ = sqrt(dot(Δx⃗⁻, Δx⃗⁻))
     l⁺ = sqrt(dot(Δx⃗⁺, Δx⃗⁺))
 
-    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻+eps(0.0)) + ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗⁻, zeros(3))
-    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺+eps(0.0)) + ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗⁺, zeros(3))
+    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻ + eps(0.0)) + ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗ⁱ⁻¹, zeros(3))
+    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺ + eps(0.0)) + ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗ⁱ⁺¹, zeros(3))
 
-    Fⁱ = params.ρₒ * (Vᵐ+node.V⃗ᵖ[i]) .* (params.Cᵃ * a⃗ᵣₑₗ + a⃗ʷ)
+    Fⁱ = params.ρₒ * (Vᵐ + Vᵖ) .* (params.Cᵃ * a⃗ᵣₑₗ + a⃗ʷ)
 
     @inbounds begin 
-        node.F⃗[i, :] = (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ
-        node.F⃗ᴰ[i, :] = Fᴰ + Fⁱ # store for back reaction onto water
+        node_accelerations[p][i, :] .= (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ
+        node_drag_forces[p][i, :] .= Fᴰ + Fⁱ # store for back reaction onto water
         
-        if any(isnan.(node.F⃗[i, :])) error("F is NaN: i=$i $(Fᴮ) .+ $(Fᴰ) .+ $(T⁻) .+ $(T⁺) at $x, $y, $z") end
+        if any(isnan.(node_accelerations[p][i, :])) error("F is NaN: i=$i $(Fᴮ) .+ $(Fᴰ) .+ $(T⁻) .+ $(T⁺) at $xⁱ, $yⁱ, $zⁱ") end
 
         # Think its possibly reassigning the same values on top of eachother?
-        node.u⃗⁻[i, :] .= node.u⃗[i, :]
-        node.u⃗[i, :] .+= rk3_substep(node.F⃗[i, :], node.F⃗⁻[i, :], Δt, γ, ζ)
-        #node.u⃗[i, :] += node.F⃗[i, :]*Δt
-        node.F⃗⁻[i, :] .= node.F⃗[i, :]
+        #u⃗⁻[p][i, :] .= node_velocities[p][i, :]
+        #node_velocities[p][i, :] .+= rk3_substep(F⃗[p][i, :], F⃗⁻[p][i, :], Δt, γ, ζ)
+        node_velocities[p][i, :] .+= node_accelerations[p][i, :] * Δt
+        #F⃗⁻[p][i, :] .= F⃗[p][i, :]
 
-        node.x⃗[i, :] .+= rk3_substep(node.u⃗[i, :], node.u⃗⁻[i, :], Δt, γ, ζ)
-        #node.x⃗[i, :] += node.u⃗[i, :]*Δt
+        #node_positions[p][i, :] .+= rk3_substep(node_velocities[p][i, :], u⃗⁻[p][i, :], Δt, γ, ζ)
+        node_positions[p][i, :] += node_velocities[p][i, :] * Δt
 
-        if node.x⃗[i, 3] + properties.z[p] > 0.0 #given above bouyancy conditions this should never be possible (assuming a flow with zero vertical velocity at the surface, i.e. a real one)
-            node.x⃗[i, 3] = -properties.z[p]
+        if node_positions[p][i, 3] + z[p] > 0.0 #given above bouyancy conditions this should never be possible (assuming a flow with zero vertical velocity at the surface, i.e. a real one)
+            node_positions[p][i, 3] = - z[p]
         end
     end
 end
@@ -210,9 +225,9 @@ end
 end
 
 function kelp_dynamics!(particles, model, Δt)
-    particles.properties.x .= particles.properties.x₀
-    particles.properties.y .= particles.properties.y₀
-    particles.properties.z .= particles.properties.z₀
+    particles.properties.x .= particles.properties.fixed_x
+    particles.properties.y .= particles.properties.fixed_y
+    particles.properties.z .= particles.properties.fixed_z
 
     # calculate each particles node dynamics
     n_particles = length(particles)
@@ -221,12 +236,29 @@ function kelp_dynamics!(particles, model, Δt)
     workgroup = (1, min(256, worksize[1]))
 
     #for substep in 1:1
-        for (γ, ζ) in rk3
-        #γ, ζ = 1.0, 1.0
+        #for (γ, ζ) in rk3
+        γ, ζ = 1.0, 1.0
             step_node_kernel! = step_node!(device(model.architecture), workgroup, worksize)
-            step_node_event = step_node_kernel!(particles.properties, model, Δt/10, γ, ζ, particles.parameters)
+
+            step_node_event = step_node_kernel!(particles.properties.x, 
+                                                particles.properties.y, 
+                                                particles.properties.z, 
+                                                particles.properties.node_positions, 
+                                                particles.properties.node_velocities, 
+                                                particles.properties.node_pneumatocyst_volumes, 
+                                                particles.properties.node_stipe_radii,  
+                                                particles.properties.node_blade_areas, 
+                                                particles.properties.node_relaxed_lengths, 
+                                                particles.properties.node_accelerations, 
+                                                particles.properties.node_drag_force, 
+                                                particles.properties.node_old_velocities, 
+                                                particles.properties.node_old_accelerations, 
+                                                model.velocities, 
+                                                model.timestepper.Gⁿ[(:u, :v, :w)], 
+                                                Δt, γ, ζ, particles.parameters)
+
             wait(step_node_event)
-        end
+        #end
     #end
 end
 

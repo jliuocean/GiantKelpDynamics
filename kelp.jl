@@ -13,9 +13,9 @@ grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(P
 
 # ## Setup kelp particles
 
-nodes = Nodes(number = 8, depth = 8.0, l₀ = 0.6, architecture = arch)
+a_kelp = GiantKelp(base_x = 5.0, base_y = 2.0, base_z = -8.0)
 
-particle_struct = StructArray{GiantKelp}(([5.0], [2.0], [-8.0], [5.0], [2.0], [-8.0], [1.0], [nodes]))
+particle_struct = StructArray([a_kelp])
 
 @inline guassian_smoothing(r, rᵉ) = 1.0#exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
 
@@ -80,7 +80,7 @@ filepath = "very_viscous_noisy_deeper_initial"
 
 simulation = Simulation(model, Δt=0.1, stop_time=3minute)
 
-simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
+#simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
 #wizard = TimeStepWizard(cfl=0.5, max_change=1.1, diffusive_cfl=0.5)
 #simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(1))
@@ -100,7 +100,7 @@ simulation.output_writers[:profiles] =
 
 function store_particles!(sim)
     jldopen("$(filepath)_particles.jld2", "a+") do file
-        file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.nodes
+        file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.x⃗
     end
 end
 
@@ -120,7 +120,7 @@ function plot(sim)
 end
 
 simulation.callbacks[:plot] = Callback(plot, IterationInterval(20))=#
-run!(simulation)
+#run!(simulation)
 #=
 file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])
@@ -164,7 +164,7 @@ CairoMakie.record(fig, "$(filepath)_vertical_slice.mp4", frame_iterator; framera
     n[] = i
     ax.title = "t=$(prettytime(parse(Float64, times[i])))"
 end
-=#
+
 
 n = Observable(1)
 fig = Figure(resolution = (2000, 2000/(.5*Lx/Ly)))
@@ -215,3 +215,4 @@ GLMakie.record(fig, "$(filepath)_3d_plot.mp4", frame_iterator; framerate = frame
     print(msg * " \r")
     ax.title = "t=$(prettytime(parse(Float64, times[i])))"
 end
+=#
