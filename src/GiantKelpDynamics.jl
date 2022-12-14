@@ -75,6 +75,11 @@ struct GiantKelp{FT, VF, SF, FA}
                          architecture = CPU()) where {IT, FT, VF, SF}
 
         # some of this mess is redundant from trying to make GPU work
+        base_x = arch_array(architecture, base_x)
+        base_y = arch_array(architecture, base_y)
+        base_z = arch_array(architecture, base_z)
+        scalefactor = arch_array(architecture, scalefactor)
+
         node_positions = arch_array(architecture, node_positions)
         node_velocities = arch_array(architecture, node_velocities)
 
@@ -93,7 +98,7 @@ struct GiantKelp{FT, VF, SF, FA}
         node_old_accelerations = arch_array(architecture, zeros(FT, number_nodes, 3))
         node_drag_forces = arch_array(architecture, zeros(FT, number_nodes, 3))
 
-        drag_fields = arch_array(architecture, [CenterField(grid) for i in 1:number_nodes])
+        drag_fields = CenterField(grid)
         FA = typeof(drag_fields)
 
         return new{FT, VFF, SFF, FA}(base_x, base_y, base_z, 
@@ -349,74 +354,76 @@ end
                             apply_drag_kernel!, 
                             parameters)
                             
-    p, n = @index(Global, NTuple)
+    p = @index(Global, NTuple)
+    for n in 1:n_nodes # is this going to be a scalar indexing
 
-    scalefactor = @inbounds scalefactors[p]
+        scalefactor = @inbounds scalefactors[p]
 
-    # get node positions and size
-    @inbounds begin
-        x⃗ = @inbounds node_positions[p][n, :] + [base_x[p], base_y[p], base_z[p]]
-        if n==1
-            x⃗⁻ =  [base_x[p], base_y[p], base_z[p]]
-        else
-            x⃗⁻ = node_positions[p][n - 1, :] + [base_x[p], base_y[p], base_z[p]]
+        # get node positions and size
+        @inbounds begin
+            x⃗ = @inbounds node_positions[p][n, :] + [base_x[p], base_y[p], base_z[p]]
+            if n==1
+                x⃗⁻ =  [base_x[p], base_y[p], base_z[p]]
+            else
+                x⃗⁻ = node_positions[p][n - 1, :] + [base_x[p], base_y[p], base_z[p]]
+            end
+
+            if n == n_nodes
+                x⃗⁺ = x⃗
+            else
+                x⃗⁺ = node_positions[p][n + 1, :] + [base_x[p], base_y[p], base_z[p]]
+            end
         end
+
+        rᵉ = @inbounds node_effective_radii[p][n]
+
+        Δx⃗ = x⃗⁺ - x⃗⁻
+            
+        if n == 1
+            l⁻ = sqrt(dot(node_positions[p][n, :], node_positions[p][n, :]))
+        else
+            l⁻ = sqrt(dot(node_positions[p][n, :] - node_positions[p][n - 1, :], node_positions[p][n, :] - node_positions[p][n - 1, :]))/2
+        end
+        
+        θ = atan(Δx⃗[2] / (Δx⃗[1] + eps(0.0))) + π * 0 ^ (1 + sign(Δx⃗[1]))
+        ϕ = atan(sqrt(Δx⃗[1] ^ 2 + Δx⃗[2] ^ 2 + eps(0.0)) / Δx⃗[3])
+
+        cosθ⁻ = dot(Δx⃗, x⃗ - x⃗⁻) / (sqrt(dot(Δx⃗, Δx⃗)) * sqrt(dot(x⃗ - x⃗⁻, x⃗ - x⃗⁻)))
+        θ⁻ = -1.0 <= cosθ⁻ <= 1.0 ? acos(cosθ⁻) : 0.0
 
         if n == n_nodes
-            x⃗⁺ = x⃗
+            l⁺ = sqrt(dot(node_positions[p][n, :] - node_positions[p][n - 1, :], node_positions[p][n, :] - node_positions[p][n - 1, :])) / 2
+            θ⁺ = θ⁻
         else
-            x⃗⁺ = node_positions[p][n + 1, :] + [base_x[p], base_y[p], base_z[p]]
+            l⁺ = sqrt(dot(node_positions[p][n + 1, :] - node_positions[p][n, :], node_positions[p][n + 1, :] - node_positions[p][n, :])) / 2
+            cosθ⁺ = - dot(Δx⃗, x⃗⁺ - x⃗) / (sqrt(dot(Δx⃗, Δx⃗)) * sqrt(dot(x⃗⁺ - x⃗, x⃗⁺ - x⃗)))
+            θ⁺ = -1.0 <= cosθ⁺ <= 1.0 ? acos(cosθ⁺) : 0.0
         end
-    end
 
-    rᵉ = @inbounds node_effective_radii[p][n]
+        node_weights_event = @inbounds node_weights_kernel!(drag_fields[p], grid, rᵉ, l⁺, l⁻, LocalTransform(θ, ϕ, θ⁺, θ⁻, x⃗), parameters)
+        wait(node_weights_event)
 
-    Δx⃗ = x⃗⁺ - x⃗⁻
-        
-    if n == 1
-        l⁻ = sqrt(dot(node_positions[p][n, :], node_positions[p][n, :]))
-    else
-        l⁻ = sqrt(dot(node_positions[p][n, :] - node_positions[p][n - 1, :], node_positions[p][n, :] - node_positions[p][n - 1, :]))/2
-    end
-    
-    θ = atan(Δx⃗[2] / (Δx⃗[1] + eps(0.0))) + π * 0 ^ (1 + sign(Δx⃗[1]))
-    ϕ = atan(sqrt(Δx⃗[1] ^ 2 + Δx⃗[2] ^ 2 + eps(0.0)) / Δx⃗[3])
+        normalisation = sum(@inbounds drag_fields[p])
+        Fᴰ = @inbounds node_drag_forces[p][n, :]
 
-    cosθ⁻ = dot(Δx⃗, x⃗ - x⃗⁻) / (sqrt(dot(Δx⃗, Δx⃗)) * sqrt(dot(x⃗ - x⃗⁻, x⃗ - x⃗⁻)))
-    θ⁻ = -1.0 <= cosθ⁻ <= 1.0 ? acos(cosθ⁻) : 0.0
+        # fallback if nodes are closer together than gridpoints and the line joining them is parallel to a grid Axis
+        # as this means there are then no nodes in the stencil. This is mainly an issue for nodes close together lying on the surface
+        # As long as the (relaxed) segment lengths are properly considered this shouldn't be an issue except during startup where upstream 
+        # elements will quickly move towards dowmnstream elements
+        if normalisation == 0.0
+            (ϵ, i), (η, j), (ζ, k) = modf.(fractional_indices(x⃗..., (Center(), Center(), Center()), grid))
+            i, j, k = floor.(Int, (i, j, k))
+            vol = Vᶜᶜᶜ(i, j, k, grid)
+            inverse_effective_mass = @inbounds 1 / (vol * parameters.ρₒ)
+            water_accelerations.u[i, j, k] -= Fᴰ[1] * inverse_effective_mass * scalefactor
+            water_accelerations.v[i, j, k] -= Fᴰ[2] * inverse_effective_mass * scalefactor
+            water_accelerations.w[i, j, k] -= Fᴰ[3] * inverse_effective_mass * scalefactor
 
-    if n == n_nodes
-        l⁺ = sqrt(dot(node_positions[p][n, :] - node_positions[p][n - 1, :], node_positions[p][n, :] - node_positions[p][n - 1, :])) / 2
-        θ⁺ = θ⁻
-    else
-        l⁺ = sqrt(dot(node_positions[p][n + 1, :] - node_positions[p][n, :], node_positions[p][n + 1, :] - node_positions[p][n, :])) / 2
-        cosθ⁺ = - dot(Δx⃗, x⃗⁺ - x⃗) / (sqrt(dot(Δx⃗, Δx⃗)) * sqrt(dot(x⃗⁺ - x⃗, x⃗⁺ - x⃗)))
-        θ⁺ = -1.0 <= cosθ⁺ <= 1.0 ? acos(cosθ⁺) : 0.0
-    end
-
-    node_weights_event = @inbounds node_weights_kernel!(drag_fields[p][n], grid, rᵉ, l⁺, l⁻, LocalTransform(θ, ϕ, θ⁺, θ⁻, x⃗), parameters)
-    wait(node_weights_event)
-
-    normalisation = sum(@inbounds drag_fields[p][n])
-    Fᴰ = @inbounds node_drag_forces[p][n, :]
-
-    # fallback if nodes are closer together than gridpoints and the line joining them is parallel to a grid Axis
-    # as this means there are then no nodes in the stencil. This is mainly an issue for nodes close together lying on the surface
-    # As long as the (relaxed) segment lengths are properly considered this shouldn't be an issue except during startup where upstream 
-    # elements will quickly move towards dowmnstream elements
-    if normalisation == 0.0
-        (ϵ, i), (η, j), (ζ, k) = modf.(fractional_indices(x⃗..., (Center(), Center(), Center()), grid))
-        i, j, k = floor.(Int, (i, j, k))
-        vol = Vᶜᶜᶜ(i, j, k, grid)
-        inverse_effective_mass = @inbounds 1 / (vol * parameters.ρₒ)
-        water_accelerations.u[i, j, k] -= Fᴰ[1] * inverse_effective_mass * scalefactor
-        water_accelerations.v[i, j, k] -= Fᴰ[2] * inverse_effective_mass * scalefactor
-        water_accelerations.w[i, j, k] -= Fᴰ[3] * inverse_effective_mass * scalefactor
-
-        @warn "Used fallback drag application as stencil found no nodes, this should be concerning if not in the initial transient response at $p, $n"
-    else
-        apply_drag_event = @inbounds apply_drag_kernel!(water_accelerations, drag_fields[p][n], normalisation, grid, Fᴰ, scalefactor, parameters)
-        wait(apply_drag_event)
+            @warn "Used fallback drag application as stencil found no nodes, this should be concerning if not in the initial transient response at $p, $n"
+        else
+            apply_drag_event = @inbounds apply_drag_kernel!(water_accelerations, drag_fields[p], normalisation, grid, Fᴰ, scalefactor, parameters)
+            wait(apply_drag_event)
+        end
     end
 end
 
@@ -428,10 +435,10 @@ function drag_water!(model)
     node_weights_kernel! = node_weights!(device(model.architecture), workgroup, worksize)
     apply_drag_kernel! = apply_drag!(device(model.architecture), workgroup, worksize)
 
-    n_particles = length(particles)
+    n_particles = particles.properties.n_nodes
     n_nodes = @inbounds length(particles.properties.node_relaxed_lengths[1])
 
-    drag_water_node_kernel! = drag_node!(device(model.architecture), (1, min(256, n_particles)), (n_particles, n_nodes))
+    drag_water_node_kernel! = drag_node!(device(model.architecture), min(256, n_particles), n_particles)
 
     drag_nodes_event = drag_water_node_kernel!(particles.properties.x, particles.properties.y, particles.properties.z, 
                                                particles.properties.scalefactor, 
