@@ -4,7 +4,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_w_from_continuit
 using Oceananigans.Grids: xnodes, ynodes
 using Oceananigans.Architectures: arch_array
 
-include("macrosystis_dynamics.jl")
+using GiantKelpDynamics
 
 arch = CUDA.has_cuda_gpu() ? Oceananigans.GPU() : Oceananigans.CPU()
 
@@ -23,25 +23,17 @@ grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(P
 forest_radius = 100
 smoothing_disance = 3.0
 
-kelp_x = zeros(Float64, 0)
-kelp_y = zeros(Float64, 0)
-kelp_sf = zeros(Float64, 0)
-kelp_nodes = Vector{Nodes}()
+kelps = GiantKelp[]
 
 for x in xnodes(Center, grid), y in ynodes(Center, grid)
     r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
     if r < forest_radius
         scalefactor = 16 * 10 * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
-        push!(kelp_x, x)
-        push!(kelp_y, y)
-        push!(kelp_sf, scalefactor)
-        push!(kelp_nodes, Nodes(number = 8, depth = 8.0, architecture = arch))
+        push!(kelps, GiantKelp(base_x = x, base_y = y, base_z = -8.0, scalefactor = scalefactor))
     end
 end
 
-n_kelp = length(kelp_x)
-
-particle_struct = StructArray{GiantKelp}((adapt_array(zeros(Float64, n_kelp)), adapt_array(zeros(Float64, n_kelp)), adapt_array(zeros(Float64, n_kelp)), adapt_array(kelp_x), adapt_array(kelp_y), adapt_array(ones(n_kelp) .* -8.0), adapt_array(kelp_sf), kelp_nodes));
+particle_struct = StructArray(kelps);
 
 @inline guassian_smoothing(r, rᵉ) = 1.0#exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
 
@@ -57,7 +49,7 @@ particles = LagrangianParticles(particle_struct;
                                               Cᵃ = 3.0,
                                               drag_smoothing = guassian_smoothing,
                                               n_nodes = 8,
-                                              kᵈ = 0.5 * 10 ^ 3)) # for a linear spring system, to be non-oscillatory we need kᵈ>√k
+                                              kᵈ = 10 ^ 4)) # for a linear spring system, to be non-oscillatory we need kᵈ>√k
 
 drag_nodes = CenterField(grid)
 
@@ -83,7 +75,7 @@ set!(model, u = uᵢ)
 
 filepath = "forest_no_coupling"
 
-simulation = Simulation(model, Δt = 5.0, stop_time = 1year)
+simulation = Simulation(model, Δt = 1.0, stop_time = 1year)
 
 #simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
@@ -99,16 +91,16 @@ simulation.callbacks[:progress] = Callback(progress_message, IterationInterval(2
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, merge(model.velocities, model.tracers),
                          filename = "$filepath.jld2",
-                         schedule = TimeInterval(1hour),
+                         schedule = TimeInterval(1minute),
                          overwrite_existing = true)
 
 function store_particles!(sim)
     jldopen("$(filepath)_particles.jld2", "a+") do file
-        file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.nodes
+        file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.node_positions
     end
 end
 
-#simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(0.1))
+simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(1minute))
 #=
 using GLMakie
 

@@ -100,7 +100,7 @@ simulation.output_writers[:profiles] =
 
 function store_particles!(sim)
     jldopen("$(filepath)_particles.jld2", "a+") do file
-        file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.x⃗
+        file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.node_positions
     end
 end
 
