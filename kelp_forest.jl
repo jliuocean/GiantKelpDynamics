@@ -22,7 +22,7 @@ grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(P
 
 forest_radius = 100
 smoothing_disance = 3.0
-
+#=
 kelps = GiantKelp[]
 
 for x in xnodes(Center, grid), y in ynodes(Center, grid)
@@ -33,9 +33,56 @@ for x in xnodes(Center, grid), y in ynodes(Center, grid)
     end
 end
 
-kelps = [kelp for kelp in kelps]; # won't work without this, fantastic
+particle_struct = StructArray(kelps);=#
 
-particle_struct = StructArray(kelps);
+x = Float64[]
+y = Float64[]
+x0 = Float64[]
+y0 = Float64[]
+sf = Float64[]
+
+for x in xnodes(Center, grid), y in ynodes(Center, grid)
+    r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
+    if r < forest_radius
+        scalefactor = 16 * 10 * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
+        push!(x, x)
+        push!(y, y)
+        push!(x0, x)
+        push!(y0, y)
+        push!(sf, scalefactor)
+    end
+end
+
+n_kelp = length(x)
+
+node_positions = zeros(Float64, n_kelp, 8, 3)
+blade_areas = zeros(Float64, n_kelp, 8)
+drag_fields = Vector{Field}()
+for i in 1:n_kelp
+    node_positions[i, :, :] = GiantKelpDynamics.x⃗₀(8, 8, 0.6, 2.5)
+    blade_areas[i, :] = 0.1 .* [i*50/8 for i in 1:8]
+    push!(drag_fields, [CenterField(grid) for i in 1:8])
+end
+
+particle_struct = StructArray{GiantKelp}(arch_array(arch, x), # x
+                                         arch_array(arch, y), # y
+                                         arch_array(arch, -8.0 * ones(n_kelp)), # z
+                                         arch_array(arch, x), # x0
+                                         arch_array(arch, y), # y0
+                                         arch_array(arch, -8.0 * ones(n_kelp)), # z0
+                                         arch_array(arch, sf), # scalefactor
+                                         arch_array(arch, node_positions), # node_positions
+                                         arch_array(arch, zeros(Float64, n_kelp, 8, 3)), # node_velocities
+                                         arch_array(arch, 0.6 * ones(Float64, n_kelp, 8)), # relaxed length
+                                         arch_array(arch, 0.03 * ones(Float64, n_kelp, 8)), # stipe radii
+                                         arch_array(arch, blade_areas), # blade area
+                                         arch_array(arch, 0.05 * ones(Float64, n_kelp, 8)), # pneumatocysts volume
+                                         arch_array(arch, 0.5 * ones(Float64, n_kelp, 8)), # effective radii
+                                         arch_array(arch, zeros(Float64, n_kelp, 8, 3)), # accelerations
+                                         arch_array(arch, zeros(Float64, n_kelp, 8, 3)), # old velocities
+                                         arch_array(arch, zeros(Float64, n_kelp, 8, 3)), # old accelerations
+                                         arch_array(arch, zeros(Float64, n_kelp, 8, 3)), # drag force
+                                         arch_array(arch, drag_fields)) # drag fiedls
 
 @inline guassian_smoothing(r, rᵉ) = 1.0#exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
 

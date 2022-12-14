@@ -437,7 +437,7 @@ function drag_water!(model)
     node_weights_kernel! = node_weights!(device(model.architecture), workgroup, worksize)
     apply_drag_kernel! = apply_drag!(device(model.architecture), workgroup, worksize)
 
-    n_particles = length(particles)
+    n_particles = particles.properties.n_nodes
     n_nodes = @inbounds length(particles.properties.node_relaxed_lengths[1])
 
     drag_water_node_kernel! = drag_node!(device(model.architecture), (1, min(256, n_particles)), (n_particles, n_nodes))
