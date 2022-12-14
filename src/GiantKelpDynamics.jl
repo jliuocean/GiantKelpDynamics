@@ -2,13 +2,15 @@ module GiantKelpDynamics
 
 export Nodes, GiantKelp, kelp_dynamics!, drag_water!
 
-using KernelAbstractions, LinearAlgebra
+using KernelAbstractions, LinearAlgebra, StructArrays
 using KernelAbstractions.Extras: @unroll
 using Oceananigans.Architectures: device, arch_array
 using Oceananigans.Fields: interpolate, fractional_x_index, fractional_y_index, fractional_z_index, fractional_indices
 using Oceananigans.Utils: work_layout
 using Oceananigans.Operators: Vᶜᶜᶜ
 using Oceananigans: CPU, node, Center, CenterField
+
+import StructArrays: staticschema, component, createinstance
 
 const rk3 = ((8//15, nothing), (5//12, -17//60), (3//4, -5//12))
 
@@ -112,6 +114,19 @@ struct GiantKelp{FT, VF, SF, FA}
     end
 end
 
+function StructArrays.staticschema(::Type{GiantKelp{T, NamedTuple{names, types}}}) where {T, names, types}
+    return NamedTuple{(:data, names...), Base.tuple_type_cons(T, types)}
+end
+
+function StructArrays.component(m::GiantKelp, key::Symbol)
+    return getfield(m, key)
+end
+
+# generate an instance of MyType type
+function StructArrays.createinstance(::Type{GiantKelp{T, NT}}, x, args...) where {T, NT}
+    return GiantKelp(x, NT(args))
+end
+
 @inline tension(Δx, l₀, Aᶜ, params) = Δx > l₀ && !(Δx == 0.0)  ? params.k * ((Δx - l₀) / l₀) ^ params.α * Aᶜ : 0.0
 
 @kernel function step_node!(x_base, y_base, z_base, 
@@ -197,8 +212,8 @@ end
     l⁻ = sqrt(dot(Δx⃗⁻, Δx⃗⁻))
     l⁺ = sqrt(dot(Δx⃗⁺, Δx⃗⁺))
 
-    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻ + eps(0.0)) + ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗ⁱ⁻¹, zeros(3))
-    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺ + eps(0.0)) + ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗ⁱ⁺¹, zeros(3))
+    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻ + eps(0.0)) - ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗ⁱ⁻¹, zeros(3))
+    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺ + eps(0.0)) - ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗ⁱ⁺¹, zeros(3))
 
     Fⁱ = params.ρₒ * (Vᵐ + Vᵖ) .* (params.Cᵃ * a⃗ᵣₑₗ + a⃗ʷ)
 

@@ -53,7 +53,7 @@ V_forcing = Forcing(relax_V, field_dependencies = (:v, ))
 @inline relax_W(x, y, z, t, w) = - 10 * mask_rel_W(x, y, z) * w
 W_forcing = Forcing(relax_W, field_dependencies = (:w, ))
 
-@inline N_background(x, y, z, t) = tanh(-z/8)
+@inline N_background(x, y, z, t) = tanh(-2 * z / 8)
 #N_relax = Relaxation(; rate = 1/10, target = N_background)
 mask_N(x, y, z) = ifelse(x < 3, 1, 0)
 @inline relax_U(x, y, z, t, N) = 10 * mask_N(x, y, z) * (N_background(x, y, z, t) - N)
@@ -76,14 +76,14 @@ vᵢ(x, y, z) = u₀*randn()*0.1
 Nᵢ(x, y, z) = N_background(x, y, z, 0.0)
 set!(model, u=uᵢ, v=vᵢ, w=vᵢ, N=Nᵢ)
 
-filepath = "very_viscous_noisy_deeper_initial"
+filepath = "very_viscous_noisy_deeper_initial_oposite_damping_sign"
 
-simulation = Simulation(model, Δt=0.1, stop_time=3minute)
+simulation = Simulation(model, Δt=0.3, stop_time=3minute)
 
 #simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
-#wizard = TimeStepWizard(cfl=0.5, max_change=1.1, diffusive_cfl=0.5)
-#simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(1))
+wizard = TimeStepWizard(cfl=0.5, max_change=1.1, diffusive_cfl=0.5)
+simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(1))
 
 progress_message(sim) = @printf("Iteration: %04d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, wall time: %s\n",
                                     iteration(sim), prettytime(sim), prettytime(sim.Δt),
@@ -117,7 +117,7 @@ file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])
 x⃗ = zeros(length(times), 8, 3)
 for (i, t) in enumerate(times)
-    x⃗[i, :, :] = file["x⃗/$t"].properties.node_positions[1]
+    x⃗[i, :, :] = file["x⃗/$t"][1]
 end
 close(file)
 u = FieldTimeSeries("$filepath.jld2", "u") .- u₀;
@@ -200,7 +200,7 @@ y = @lift (x⃗.+2)[$n, :, 2]
 z = @lift (x⃗.-8)[$n, :, 3]
 
 plot!(ax, x, y, z)
-GLMakie.record(fig, "$(filepath)_3d_plot.mp4", frame_iterator; framerate = framerate) do i
+CairoMakie.record(fig, "$(filepath)_3d_plot.mp4", frame_iterator; framerate = framerate) do i
     n[] = i
     msg = string("Plotting frame ", i, " of ", nframes)
     print(msg * " \r")
