@@ -53,14 +53,14 @@ for x in xnodes(Center, grid), y in ynodes(Center, grid)
     end
 end
 
-n_kelp = length(x)
+n_kelp = length(xs)
 
-node_positions = zeros(Float64, n_kelp, 8, 3)
-blade_areas = zeros(Float64, n_kelp, 8)
+node_positions = Vector{Vector{CuArray{Float64, 2, CUDA.Mem.DeviceBuffer}}}()
+blade_areas = Vector{Vector{CuArray{Float64, 1, CUDA.Mem.DeviceBuffer}}}()
 drag_fields = Vector{Field}()
 for i in 1:n_kelp
-    node_positions[i, :, :] = GiantKelpDynamics.x⃗₀(8, 8, 0.6, 2.5)
-    blade_areas[i, :] = 0.1 .* [i*50/8 for i in 1:8]
+    push!(node_positions, arch_array(GiantKelpDynamics.x⃗₀(8, 8, 0.6, 2.5)))
+    push!(blade_areas, arch_array(0.1 .* [i*50/8 for i in 1:8]))
     push!(drag_fields, CenterField(grid))
 end
 
@@ -72,17 +72,17 @@ particle_struct = StructArray{GiantKelp}(arch_array(arch, xs), # x
                                          arch_array(arch, -8.0 * ones(n_kelp)), # z0
                                          arch_array(arch, sf), # scalefactor
                                          arch_array(arch, node_positions), # node_positions
-                                         arch_array(arch, zeros(Float64, n_kelp, 8, 3)), # node_velocities
-                                         arch_array(arch, 0.6 * ones(Float64, n_kelp, 8)), # relaxed length
-                                         arch_array(arch, 0.03 * ones(Float64, n_kelp, 8)), # stipe radii
-                                         arch_array(arch, blade_areas), # blade area
-                                         arch_array(arch, 0.05 * ones(Float64, n_kelp, 8)), # pneumatocysts volume
-                                         arch_array(arch, 0.5 * ones(Float64, n_kelp, 8)), # effective radii
-                                         arch_array(arch, zeros(Float64, n_kelp, 8, 3)), # accelerations
-                                         arch_array(arch, zeros(Float64, n_kelp, 8, 3)), # old velocities
-                                         arch_array(arch, zeros(Float64, n_kelp, 8, 3)), # old accelerations
-                                         arch_array(arch, zeros(Float64, n_kelp, 8, 3)), # drag force
-                                         arch_array(arch, drag_fields)) # drag fiedls
+                                         [arch_array(arch, zeros(Float64, 8, 3)) for n in 1:n_kelp], # node_velocities
+                                         [arch_array(arch, 0.6 * ones(Float64, 8)) for n in 1:n_kelp], # relaxed length
+                                         [arch_array(arch, 0.03 * ones(Float64, 8)) for n in 1:n_kelp], # stipe radii
+                                         blade_areas, # blade area
+                                         [arch_array(arch, 0.05 * ones(Float64, 8)) for n in 1:n_kelp], # pneumatocysts volume
+                                         [arch_array(arch, 0.5 * ones(Float64, 8)) for n in 1:n_kelp], # effective radii
+                                         [arch_array(arch, zeros(Float64, 8, 3)) for n in 1:n_kelp], # accelerations
+                                         [arch_array(arch, zeros(Float64, 8, 3)) for n in 1:n_kelp], # old velocities
+                                         [arch_array(arch, zeros(Float64, 8, 3)) for n in 1:n_kelp], # old accelerations
+                                         [arch_array(arch, zeros(Float64, 8, 3)) for n in 1:n_kelp], # drag force
+                                         drag_fields) # drag fiedls
 
 @inline guassian_smoothing(r, rᵉ) = 1.0#exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
 
