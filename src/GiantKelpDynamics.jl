@@ -2,13 +2,15 @@ module GiantKelpDynamics
 
 export Nodes, GiantKelp, kelp_dynamics!, drag_water!
 
-using KernelAbstractions, LinearAlgebra
+using KernelAbstractions, LinearAlgebra, StructArrays
 using KernelAbstractions.Extras: @unroll
 using Oceananigans.Architectures: device, arch_array
 using Oceananigans.Fields: interpolate, fractional_x_index, fractional_y_index, fractional_z_index, fractional_indices
 using Oceananigans.Utils: work_layout
 using Oceananigans.Operators: Vᶜᶜᶜ
 using Oceananigans: CPU, node, Center, CenterField
+
+import StructArrays: staticschema, component, createinstance
 
 const rk3 = ((8//15, nothing), (5//12, -17//60), (3//4, -5//12))
 
@@ -73,6 +75,11 @@ struct GiantKelp{FT, VF, SF, FA}
                          architecture = CPU()) where {IT, FT, VF, SF}
 
         # some of this mess is redundant from trying to make GPU work
+        base_x = arch_array(architecture, base_x)
+        base_y = arch_array(architecture, base_y)
+        base_z = arch_array(architecture, base_z)
+        scalefactor = arch_array(architecture, scalefactor)
+
         node_positions = arch_array(architecture, node_positions)
         node_velocities = arch_array(architecture, node_velocities)
 
@@ -110,6 +117,23 @@ struct GiantKelp{FT, VF, SF, FA}
                                      node_drag_forces,
                                      drag_fields)
     end
+end
+
+#####
+##### StructArrays overloads to concrete StructArray type for GPU compatability
+##### !!! I do not understand what this is doing
+#####
+function StructArrays.staticschema(::Type{GiantKelp{T, NamedTuple{names, types}}}) where {T, names, types}
+    return NamedTuple{(:data, names...), Base.tuple_type_cons(T, types)}
+end
+
+function StructArrays.component(m::GiantKelp, key::Symbol)
+    return getfield(m, key)
+end
+
+# generate an instance of GiantKelp type
+function StructArrays.createinstance(::Type{GiantKelp{T, NT}}, x, args...) where {T, NT}
+    return GiantKelp(x, NT(args))
 end
 
 @inline tension(Δx, l₀, Aᶜ, params) = Δx > l₀ && !(Δx == 0.0)  ? params.k * ((Δx - l₀) / l₀) ^ params.α * Aᶜ : 0.0
@@ -197,8 +221,8 @@ end
     l⁻ = sqrt(dot(Δx⃗⁻, Δx⃗⁻))
     l⁺ = sqrt(dot(Δx⃗⁺, Δx⃗⁺))
 
-    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻ + eps(0.0)) + ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗ⁱ⁻¹, zeros(3))
-    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺ + eps(0.0)) + ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗ⁱ⁺¹, zeros(3))
+    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻ + eps(0.0)) - ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗ⁱ⁻¹, zeros(3))
+    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺ + eps(0.0)) - ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗ⁱ⁺¹, zeros(3))
 
     Fⁱ = params.ρₒ * (Vᵐ + Vᵖ) .* (params.Cᵃ * a⃗ᵣₑₗ + a⃗ʷ)
 

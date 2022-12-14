@@ -33,6 +33,8 @@ for x in xnodes(Center, grid), y in ynodes(Center, grid)
     end
 end
 
+kelps = [kelp for kelp in kelps]; # won't work without this, fantastic
+
 particle_struct = StructArray(kelps);
 
 @inline guassian_smoothing(r, rᵉ) = 1.0#exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
