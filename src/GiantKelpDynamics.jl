@@ -145,8 +145,8 @@ end
                             node_drag_forces, 
                             node_old_velocities,
                             node_old_accelerations, 
-                            water_velocities, 
-                            water_acceleration, 
+                            water_u, water_v, water_w, 
+                            water_du, water_dv, water_dw, 
                             Δt, γ, ζ, params)
 
     p, i = @index(Global, NTuple)
@@ -180,11 +180,11 @@ end
     Vᵐ = π * rˢ ^ 2 * l + Aᵇ * 0.01 # TODO: change thickness to some realistic thing
     mᵉ = (Vᵐ + params.Cᵃ * (Vᵐ + Vᵖ)) * params.ρₒ
 
-    u⃗ʷ = [interpolate.(values(water_velocities), x, y, z)...]
+    u⃗ʷ = [interpolate.([water_u, water_v, water_w], x, y, z)...]
     u⃗ᵣₑₗ = u⃗ʷ - u⃗ⁱ
     sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
 
-    a⃗ʷ = [interpolate.(values(water_acceleration), x, y, z)...]
+    a⃗ʷ = [interpolate.([water_du, water_dv, water_dw], x, y, z)...]
     a⃗ⁱ = node_accelerations[p][i, :]
     a⃗ᵣₑₗ = a⃗ʷ - a⃗ⁱ
 
@@ -281,8 +281,12 @@ function kelp_dynamics!(particles, model, Δt)
                                                 particles.properties.node_drag_forces, 
                                                 particles.properties.node_old_velocities, 
                                                 particles.properties.node_old_accelerations, 
-                                                model.velocities, 
-                                                model.timestepper.Gⁿ[(:u, :v, :w)], 
+                                                model.velocities.u,
+                                                model.velocities.v,
+                                                model.velocities.w,
+                                                model.timestepper.Gⁿ.u,
+                                                model.timestepper.Gⁿ.v,
+                                                model.timestepper.Gⁿ.w, 
                                                 Δt/n_substeps, γ, ζ, particles.parameters)
 
             wait(step_node_event)
