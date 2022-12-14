@@ -1,17 +1,9 @@
 using Oceananigans, StructArrays, Printf, JLD2, Statistics, CUDA
 using Oceananigans.Units: minutes, minute, hour, hours, day
 
-include("macrosystis_dynamics.jl")
+using GiantKelpDynamics
 
 arch = CUDA.has_cuda_gpu() ? Oceananigans.GPU() : Oceananigans.CPU()
-
-if arch == Oceananigans.CPU()
-    adapt_array(array) = Array(array)
-elseif arch == Oceananigans.GPU()
-    adapt_array(array) = CuArray(array)
-else
-    error("Incorrect arch type")
-end
 
 # ## Setup grid 
 Lx, Ly, Lz = 24, 4, 8
@@ -20,69 +12,40 @@ grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(P
 
 # ## Setup kelp particles
 
-x⃗₀ = zeros(8, 3)
-zᶜ = 0.0
-for i=1:8
-    global zᶜ += 12/8
-    if zᶜ - 8.0 < 0
-        x⃗₀[i, :] = [0.0, 0.0, zᶜ]
-    else
-        x⃗₀[i, :] = [zᶜ - 8, 0.0, 8.0]
-    end
-end
+kelp = GiantKelp(; grid, base_x = 5.0, base_y = 2.0, base_z = -8.0, architecture = arch)
 
-x⃗₀[:, 2] .= 0.0
-
-n⃗ᵇ = [20 for i = 1:8]
-A⃗ᵇ = repeat([0.1], 8)
-
-nodes = Nodes(adapt_array.((x⃗₀, 
-                            zeros(8, 3), 
-                            repeat([.8*12/8], 8), 
-                            repeat([0.03], 8), 
-                            n⃗ᵇ, #repeat([1], 8), 
-                            A⃗ᵇ, #repeat([1], 8), 
-                            repeat([0.003], 8), 
-                            repeat([0.5], 8), 
-                            zeros(8, 3), 
-                            zeros(8, 3), 
-                            zeros(8, 3), 
-                            zeros(8, 3)))...)
-
-particle_struct = StructArray{GiantKelp}(adapt_array.(([5.0], [2.0], [-8.0], [5.0], [2.0], [-8.0], [nodes])))
+particle_struct = StructArray([kelp])
 
 @inline guassian_smoothing(r, rᵉ) = 1.0#exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
 
 particles = LagrangianParticles(particle_struct; 
                             dynamics = kelp_dynamics!, 
-                            parameters = (k = 10^5, 
+                            parameters = (k = 10 ^ 5, 
                                           α = 1.41, 
                                           ρₒ = 1026.0, 
                                           ρₐ = 1.225, 
                                           g = 9.81, 
                                           Cᵈˢ = 1.0, 
-                                          Cᵈᵇ=0.4*12^(-0.485), 
+                                          Cᵈᵇ= 0.4 * 12 ^ -0.485, 
                                           Cᵃ = 3.0,
+                                          kᵈ = 0.0,
                                           drag_smoothing = guassian_smoothing,
                                           n_nodes = 8))
 
 u₀=0.2
 
-drag_nodes = CenterField(grid)
-
 model = NonhydrostaticModel(; grid,
                                 advection = WENO(),
                                 timestepper = :RungeKutta3,
                                 closure = ScalarDiffusivity(ν=1e-4, κ=1e-4),
-                                particles = particles,
-                                auxiliary_fields = (; drag_nodes))
+                                particles = particles)
 
 uᵢ(x, y, z) = u₀
 set!(model, u=uᵢ)
 
 filepath = "momentum_conservation"
 
-simulation = Simulation(model, Δt=0.5, stop_time=1minute)
+simulation = Simulation(model, Δt=0.01, stop_time=1minute)
 
 simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
@@ -102,13 +65,13 @@ simulation.output_writers[:profiles] =
 
 function store_particles!(sim)
     jldopen("$(filepath)_particles.jld2", "a+") do file
-        file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.nodes
+        file["x⃗/$(sim.model.clock.time)"] = sim.model.particles
     end
 end
 
 simulation.callbacks[:save_particles] = Callback(store_particles!, IterationInterval(1))
 
-run!(simulation)
+#run!(simulation)
 #=
 file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])
@@ -142,7 +105,7 @@ CairoMakie.record(fig, "nodes_dragging.mp4", frame_iterator; framerate = framera
     n[] = i
     ax.title = "t=$(prettytime(parse(Float64, times[i])))"
 end
-=#
+
 u = FieldTimeSeries("$filepath.jld2", "u") .- u₀;
 
 n = Observable(1)
@@ -166,3 +129,4 @@ CairoMakie.record(fig, "horizontal_u.mp4", frame_iterator; framerate = framerate
     print(msg * " \r")
     ax_u.title = "t=$(prettytime(parse(Float64, times[i])))"
 end
+=#
