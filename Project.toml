@@ -1,3 +1,8 @@
+name = "GiantKelpDynamics"
+uuid = "22d75128-5510-47f0-8130-ce011ab7e304"
+authors = ["Jago Stong-Wright <jagoosw@protonmail.com>"]
+version = "0.1.0"
+
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
@@ -6,6 +11,7 @@ GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 InteractiveErrors = "6cff3a6f-7015-4b3b-b269-4b312a73b9bf"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 NetCDF = "30363a11-5582-574a-97bb-aa9a979735b9"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"

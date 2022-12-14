@@ -2,7 +2,7 @@ using Oceananigans, StructArrays, Printf, JLD2, Statistics, CUDA
 using Oceananigans.Units: minutes, minute, hour, hours, day
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: compute_w_from_continuity!
 
-include("macrosystis_dynamics.jl")
+using GiantKelpDynamics
 
 arch = CUDA.has_cuda_gpu() ? Oceananigans.GPU() : Oceananigans.CPU()
 

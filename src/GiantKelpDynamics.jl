@@ -1,3 +1,7 @@
+module GiantKelpDynamics
+
+export Nodes, GiantKelp, kelp_dynamics!, drag_water!
+
 using KernelAbstractions, LinearAlgebra
 using KernelAbstractions.Extras: @unroll
 using Oceananigans.Architectures: device, arch_array
@@ -368,3 +372,5 @@ function drag_water!(model)
     drag_nodes_event = drag_water_node_kernel!(particles, particles.properties, model.grid, drag_nodes, n_nodes, Gᵘ, Gᵛ, Gʷ, node_weights_kernel!, apply_drag_kernel!)
     wait(drag_nodes_event)
 end
+
+end # module
