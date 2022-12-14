@@ -13,7 +13,7 @@ grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(P
 
 # ## Setup kelp particles
 
-a_kelp = GiantKelp(; grid, base_x = 5.0, base_y = 2.0, base_z = -8.0)
+a_kelp = GiantKelp(; grid, base_x = 5.0, base_y = 2.0, base_z = -8.0, architecture = arch)
 
 particle_struct = StructArray([a_kelp])
 
@@ -117,7 +117,7 @@ file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])
 x⃗ = zeros(length(times), 8, 3)
 for (i, t) in enumerate(times)
-    x⃗[i, :, :] = file["x⃗/$t"][1]
+    x⃗[i, :, :] = file["x⃗/$t"].properties.node_positions[1]
 end
 close(file)
 u = FieldTimeSeries("$filepath.jld2", "u") .- u₀;

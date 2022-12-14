@@ -29,7 +29,7 @@ for x in xnodes(Center, grid), y in ynodes(Center, grid)
     r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
     if r < forest_radius
         scalefactor = 16 * 10 * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
-        push!(kelps, GiantKelp(; grid, base_x = x, base_y = y, base_z = -8.0, scalefactor = scalefactor))
+        push!(kelps, GiantKelp(; grid, base_x = x, base_y = y, base_z = -8.0, scalefactor = scalefactor, architecture = arch))
     end
 end
 
