@@ -61,7 +61,7 @@ drag_fields = Vector{Field}()
 for i in 1:n_kelp
     node_positions[i, :, :] = GiantKelpDynamics.x⃗₀(8, 8, 0.6, 2.5)
     blade_areas[i, :] = 0.1 .* [i*50/8 for i in 1:8]
-    push!(drag_fields, [CenterField(grid) for i in 1:8])
+    push!(drag_fields, CenterField(grid))
 end
 
 particle_struct = StructArray{GiantKelp}(arch_array(arch, x), # x

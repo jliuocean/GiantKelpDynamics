@@ -47,13 +47,19 @@ filepath = "momentum_conservation"
 
 simulation = Simulation(model, Δt=0.01, stop_time=1minute)
 
-simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
 progress_message(sim) = @printf("Iteration: %04d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, wall time: %s\n",
                                     iteration(sim), prettytime(sim), prettytime(sim.Δt),
                                     maximum(abs, sim.model.velocities.u), prettytime(sim.run_wall_time))
     
 simulation.callbacks[:progress] = Callback(progress_message, IterationInterval(20))
+
+simulation.stop_time = 30
+run!(simulation)
+
+simulaiton.stop_time = 1minute
+
+simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
 ∫adV = Integral(model.timestepper.Gⁿ.u, dims=(1, 2, 3))
 
