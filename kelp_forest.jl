@@ -29,7 +29,7 @@ for x in xnodes(Center, grid), y in ynodes(Center, grid)
     r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
     if r < forest_radius
         scalefactor = 16 * 10 * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
-        push!(kelps, GiantKelp(base_x = x, base_y = y, base_z = -8.0, scalefactor = scalefactor))
+        push!(kelps, GiantKelp(; grid, base_x = x, base_y = y, base_z = -8.0, scalefactor = scalefactor))
     end
 end
 
@@ -77,8 +77,6 @@ filepath = "forest_no_coupling"
 
 simulation = Simulation(model, Δt = 1.0, stop_time = 1year)
 
-#simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
-
 #wizard = TimeStepWizard(cfl = 0.5, max_change = 1.1, diffusive_cfl = 0.5)
 #simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
 
@@ -101,22 +99,13 @@ function store_particles!(sim)
 end
 
 simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(1minute))
-#=
-using GLMakie
-
-fig = Figure(resolution = (2000, 2000/(Lx/Ly)))
-ax_u  = Axis(fig[1, 1]; xlabel="x (m)", ylabel="y (m)")
-getcol(z) = RGBAf.(0, 0, 0, (8 .+ z)./10 .+.2)
-function plot(sim)
-    model = sim.model
-    uₘ = maximum(abs, model.velocities.u[:, :, Nz] .- u₀)
-    hm = heatmap!(ax_u, grid.xᶜᵃᵃ[1:Nx], grid.yᵃᶜᵃ[1:Ny], model.velocities.u[1:Nx, 1:Ny, Nz] .- u₀, colorrange=(-uₘ, uₘ), colormap=:vik)
-    plt = plot!(ax_u, nodes.x⃗[:, 1] .+ 5, nodes.x⃗[:, 2] .+ 2, color=getcol.(nodes.x⃗[:, 3] .- 8))
-    fig
-end
-
-simulation.callbacks[:plot] = Callback(plot, IterationInterval(20))=#
+simulation.stop_time = 30
 run!(simulation)
+
+simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
+simulation.stop_time = 3minutes
+run!(simulation)
+
 #=
 file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])

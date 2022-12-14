@@ -13,7 +13,7 @@ grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(P
 
 # ## Setup kelp particles
 
-a_kelp = GiantKelp(base_x = 5.0, base_y = 2.0, base_z = -8.0)
+a_kelp = GiantKelp(; grid, base_x = 5.0, base_y = 2.0, base_z = -8.0)
 
 particle_struct = StructArray([a_kelp])
 
@@ -105,28 +105,19 @@ function store_particles!(sim)
 end
 
 simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(0.1))
-#=
-using GLMakie
+simulation.stop_time = 30
+run!(simulation)
 
-fig = Figure(resolution = (2000, 2000/(Lx/Ly)))
-ax_u  = Axis(fig[1, 1]; xlabel="x (m)", ylabel="y (m)")
-getcol(z) = RGBAf.(0, 0, 0, (8 .+ z)./10 .+.2)
-function plot(sim)
-    model = sim.model
-    uₘ = maximum(abs, model.velocities.u[:, :, Nz] .- u₀)
-    hm = heatmap!(ax_u, grid.xᶜᵃᵃ[1:Nx], grid.yᵃᶜᵃ[1:Ny], model.velocities.u[1:Nx, 1:Ny, Nz] .- u₀, colorrange=(-uₘ, uₘ), colormap=:vik)
-    plt = plot!(ax_u, nodes.x⃗[:, 1] .+ 5, nodes.x⃗[:, 2] .+ 2, color=getcol.(nodes.x⃗[:, 3] .- 8))
-    fig
-end
+simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
+simulation.stop_time = 3minutes
+run!(simulation)
 
-simulation.callbacks[:plot] = Callback(plot, IterationInterval(20))=#
-#run!(simulation)
 #=
 file = jldopen("$(filepath)_particles.jld2")
 times = keys(file["x⃗"])
 x⃗ = zeros(length(times), 8, 3)
 for (i, t) in enumerate(times)
-    x⃗[i, :, :] = file["x⃗/$t"][1].x⃗
+    x⃗[i, :, :] = file["x⃗/$t"][1]
 end
 close(file)
 u = FieldTimeSeries("$filepath.jld2", "u") .- u₀;
