@@ -35,20 +35,20 @@ end
 
 particle_struct = StructArray(kelps);=#
 
-x = Float64[]
-y = Float64[]
-x0 = Float64[]
-y0 = Float64[]
-sf = Float64[]
+xs = Vector{Float64}()
+ys = Vector{Float64}()
+xs0 = Vector{Float64}()
+ys0 = Vector{Float64}()
+sf = Vector{Float64}()
 
 for x in xnodes(Center, grid), y in ynodes(Center, grid)
     r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
     if r < forest_radius
         scalefactor = 16 * 10 * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
-        push!(x, x)
-        push!(y, y)
-        push!(x0, x)
-        push!(y0, y)
+        push!(xs, x)
+        push!(ys, y)
+        push!(xs0, x)
+        push!(ys0, y)
         push!(sf, scalefactor)
     end
 end
@@ -64,11 +64,11 @@ for i in 1:n_kelp
     push!(drag_fields, CenterField(grid))
 end
 
-particle_struct = StructArray{GiantKelp}(arch_array(arch, x), # x
-                                         arch_array(arch, y), # y
+particle_struct = StructArray{GiantKelp}(arch_array(arch, xs), # x
+                                         arch_array(arch, ys), # y
                                          arch_array(arch, -8.0 * ones(n_kelp)), # z
-                                         arch_array(arch, x), # x0
-                                         arch_array(arch, y), # y0
+                                         arch_array(arch, xs), # x0
+                                         arch_array(arch, ys), # y0
                                          arch_array(arch, -8.0 * ones(n_kelp)), # z0
                                          arch_array(arch, sf), # scalefactor
                                          arch_array(arch, node_positions), # node_positions
