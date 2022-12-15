@@ -85,7 +85,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                     Cᵃ = 3.0,
                                     drag_smoothing = no_smoothing,
                                     n_nodes = 8,
-                                    kᵈ = 10 ^ 4)) where {FT}
+                                    kᵈ = 500)) where {FT}
 
     base_x = arch_array(architecture, base_x)
     base_y = arch_array(architecture, base_y)
