@@ -13,7 +13,7 @@ grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(P
 
 # ## Setup kelp particles
 
-kelps = GiantKelp(;grid, base_x = [5.0], base_y = [2.0], base_z = [-8.0], architecture = arch)
+kelps = GiantKelp(;grid, base_x = [5.0], base_y = [2.0], base_z = [-8.0], architecture = arch, substeps = 10)
 
 u₀ = 0.2
 
@@ -41,8 +41,6 @@ mask_N(x, y, z) = ifelse(x < 3, 1, 0)
 @inline relax_N(x, y, z, t, N) = 1 * mask_N(x, y, z) * (N_background(x, y, z, t) - N)
 N_forcing = Forcing(relax_N, field_dependencies = (:N, ))
 
-drag_nodes = CenterField(grid)
-
 model = NonhydrostaticModel(; grid,
                               advection = WENO(grid),
                               timestepper = :RungeKutta3,
@@ -50,7 +48,6 @@ model = NonhydrostaticModel(; grid,
                               boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
                               forcing = (u = U_forcing, N = N_forcing),#v = V_forcing, w = W_forcing, N = N_forcing),
                               particles = kelps,
-                              auxiliary_fields = (; drag_nodes),
                               tracers = :N)
 
 uᵢ(x, y, z) = u₀*(1 + randn()*0.01)

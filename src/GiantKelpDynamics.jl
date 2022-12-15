@@ -11,7 +11,7 @@ using Oceananigans.Operators: Vᶜᶜᶜ
 using Oceananigans: CPU, node, Center, CenterField
 using Oceananigans.LagrangianParticleTracking: AbstractParticle, LagrangianParticles
 
-const rk3 = ((8//15, nothing), (5//12, -17//60), (3//4, -5//12))
+include("timesteppers.jl")
 
 function x⃗₀(number, depth, l₀, initial_stretch)
     x = zeros(number, 3)
@@ -85,7 +85,9 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                     Cᵃ = 3.0,
                                     drag_smoothing = no_smoothing,
                                     n_nodes = 8,
-                                    kᵈ = 500)) where {FT}
+                                    τ = 1.0),
+                      timestepper = RK3(),
+                      substeps = 1) where {FT}
 
     base_x = arch_array(architecture, base_x)
     base_y = arch_array(architecture, base_y)
@@ -152,7 +154,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                         drag_forces,
                                         drag_fields)
 
-    return LagrangianParticles(kelps; parameters, dynamics = kelp_dynamics!)
+    return LagrangianParticles(kelps; parameters = merge(parameters, (; timestepper, substeps)), dynamics = kelp_dynamics!)
 end
 
 @inline tension(Δx, l₀, Aᶜ, params) = Δx > l₀ && !(Δx == 0.0)  ? params.k * ((Δx - l₀) / l₀) ^ params.α * Aᶜ : 0.0
@@ -170,7 +172,8 @@ end
                             old_accelerations, 
                             water_u, water_v, water_w, 
                             water_du, water_dv, water_dw, 
-                            Δt, γ, ζ, params)
+                            Δt, params,
+                            timestepper, stage)
 
     p, n = @index(Global, NTuple)
 
@@ -240,25 +243,24 @@ end
     l⁻ = sqrt(dot(Δx⃗⁻, Δx⃗⁻))
     l⁺ = sqrt(dot(Δx⃗⁺, Δx⃗⁺))
 
-    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻ + eps(0.0)) + ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗ⁱ⁻¹, zeros(3))
-    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺ + eps(0.0)) + ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗ⁱ⁺¹, zeros(3))
+    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻ + eps(0.0))# + ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗ⁱ⁻¹, zeros(3))
+    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺ + eps(0.0))# + ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗ⁱ⁺¹, zeros(3))
 
     Fⁱ = params.ρₒ * (Vᵐ + Vᵖ) .* (params.Cᵃ * a⃗ᵣₑₗ + a⃗ʷ)
 
     @inbounds begin 
-        accelerations[p, n, :] .= (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ
+        accelerations[p, n, :] .= (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ - velocities[p, n, :]/params.τ
         drag_forces[p, n, :] .= Fᴰ + Fⁱ # store for back reaction onto water
         
         if any(isnan.(accelerations[p, n, :])) error("F is NaN: i=$i $(Fᴮ) .+ $(Fᴰ) .+ $(T⁻) .+ $(T⁺) at $x, $y, $z") end
 
-        # Think its possibly reassigning the same values on top of eachother?
         old_velocities[p, n, :] .= velocities[p, n, :]
-        velocities[p, n, :] .+= rk3_substep(accelerations[p, n, :], old_accelerations[p, n, :], Δt, γ, ζ)
-        #velocities[p, n, :] .+= accelerations[p, n, :] * Δt
+        
+        velocities[p, n, :] .+= timestepper(accelerations[p, n, :], old_accelerations[p, n, :], Δt, stage)
+        
         old_accelerations[p, n, :] .= accelerations[p, n, :]
 
-        positions[p, n, :] .+= rk3_substep(velocities[p, n, :], old_velocities[p, n, :], Δt, γ, ζ)
-        #positions[p, n, :] += velocities[p, n, :] * Δt
+        positions[p, n, :] .+= timestepper(velocities[p, n, :], old_velocities[p, n, :], Δt, stage)
 
         if positions[p, n, 3] + z_base[p] > 0.0 #given above bouyancy conditions this should never be possible (assuming a flow with zero vertical velocity at the surface, i.e. a real one)
             positions[p, n, 3] = - z_base[p]
@@ -285,10 +287,8 @@ function kelp_dynamics!(particles, model, Δt)
     worksize = (n_particles, n_nodes)
     workgroup = (1, min(256, worksize[1]))
 
-    n_substeps = 10
-    for substep in 1:n_substeps        
-        for (γ, ζ) in rk3
-        #γ, ζ = 1.0, 1.0
+    for substep in 1:particles.parameters.substeps        
+        for stage in stages(particles.parameters.timestepper)
             step_kernel! = step_node!(device(model.architecture), workgroup, worksize)
 
             step_event = step_kernel!(particles.properties.x, 
@@ -310,10 +310,10 @@ function kelp_dynamics!(particles, model, Δt)
                                       model.timestepper.Gⁿ.u,
                                       model.timestepper.Gⁿ.v,
                                       model.timestepper.Gⁿ.w, 
-                                      Δt/n_substeps, 
-                                      γ, 
-                                      ζ, 
-                                      particles.parameters)
+                                      Δt/particles.parameters.substeps, 
+                                      particles.parameters,
+                                      particles.parameters.timestepper,
+                                      stage)
 
             wait(step_event)
         end
