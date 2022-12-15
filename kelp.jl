@@ -103,9 +103,9 @@ function store_particles!(sim)
         file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.node_positions
     end
 end
-
+simulation.output_writers[:checkpointer] = Checkpointer(model, schedule=TimeInterval(5), prefix="checkpoint")
 simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(1))
-simulation.stop_time = 30
+simulation.stop_time = 25
 run!(simulation)
 
 simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())

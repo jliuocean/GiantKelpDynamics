@@ -119,19 +119,6 @@ struct GiantKelp{FT, VF, SF, FA}
     end
 end
 
-function StructArrays.staticschema(::Type{GiantKelp{T, NamedTuple{names, types}}}) where {T, names, types}
-    return NamedTuple{(:data, names...), Base.tuple_type_cons(T, types)}
-end
-
-function StructArrays.component(m::GiantKelp, key::Symbol)
-    return getfield(m, key)
-end
-
-# generate an instance of MyType type
-function StructArrays.createinstance(::Type{GiantKelp{T, NT}}, x, args...) where {T, NT}
-    return GiantKelp(x, NT(args))
-end
-
 @inline tension(Δx, l₀, Aᶜ, params) = Δx > l₀ && !(Δx == 0.0)  ? params.k * ((Δx - l₀) / l₀) ^ params.α * Aᶜ : 0.0
 
 @kernel function step_node!(x_base, y_base, z_base, 
@@ -368,7 +355,7 @@ end
 
         # get node positions and size
         @inbounds begin
-            x⃗ = @inbounds node_positions[p][n, :] + [base_x[p], base_y[p], base_z[p]]
+            x⃗ = node_positions[p][n, :] + [base_x[p], base_y[p], base_z[p]]
             if n==1
                 x⃗⁻ =  [base_x[p], base_y[p], base_z[p]]
             else
@@ -442,8 +429,8 @@ function drag_water!(model)
     node_weights_kernel! = node_weights!(device(model.architecture), workgroup, worksize)
     apply_drag_kernel! = apply_drag!(device(model.architecture), workgroup, worksize)
 
-    n_particles = particles.parameters.n_nodes
-    n_nodes = @inbounds length(particles.properties.node_relaxed_lengths[1])
+    n_particles = length(particles)
+    n_nodes = particles.parameters.n_nodes
 
     drag_water_node_kernel! = drag_node!(device(model.architecture), min(256, n_particles), n_particles)
 
