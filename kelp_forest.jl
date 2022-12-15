@@ -38,8 +38,6 @@ particle_struct = StructArray(kelps);=#
 
 xs = Vector{FT}()
 ys = Vector{FT}()
-xs0 = Vector{FT}()
-ys0 = Vector{FT}()
 sf = Vector{FT}()
 
 inv_density = 2
@@ -50,61 +48,11 @@ for x in xnodes(Center, grid)[1:inv_density:end], y in ynodes(Center, grid)[1:in
         scalefactor = 16 * 10 * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
         push!(xs, x)
         push!(ys, y)
-        push!(xs0, x)
-        push!(ys0, y)
         push!(sf, scalefactor)
     end
 end
 
-n_kelp = length(xs)
-
-node_positions = Vector{typeof(GiantKelpDynamics.x⃗₀(8, 8.0, 0.6, 2.5))}()
-blade_areas = Vector{typeof([i*50.0/8 for i in 1:8])}()
-drag_fields = Vector{Field}()
-for i in 1:n_kelp
-    push!(node_positions, arch_array(arch, GiantKelpDynamics.x⃗₀(8, 8.0, 0.6, 2.5)))
-    push!(blade_areas, arch_array(arch, 0.1 .* [i*50/8 for i in 1:8]))
-    push!(drag_fields, CenterField(grid))
-end
-
-particle_struct = StructArray{GiantKelp}((arch_array(arch, xs), # x
-                                          arch_array(arch, ys), # y
-                                          arch_array(arch, -8.0 * ones(n_kelp)), # z
-                                          arch_array(arch, xs), # x0
-                                          arch_array(arch, ys), # y0
-                                          arch_array(arch, -8.0 * ones(n_kelp)), # z0
-                                          arch_array(arch, sf .* inv_density), # scalefactor
-                                          node_positions, # node_positions
-                                          [arch_array(arch, zeros(FT, 8, 3)) for n in 1:n_kelp], # node_velocities
-                                          [arch_array(arch, 0.6 * ones(FT, 8)) for n in 1:n_kelp], # relaxed length
-                                          [arch_array(arch, 0.03 * ones(FT, 8)) for n in 1:n_kelp], # stipe radii
-                                          blade_areas, # blade area
-                                          [arch_array(arch, 0.05 * ones(FT, 8)) for n in 1:n_kelp], # pneumatocysts volume
-                                          [arch_array(arch, 3.906 * inv_density * ones(FT, 8)) for n in 1:n_kelp], # effective radii
-                                          [arch_array(arch, zeros(FT, 8, 3)) for n in 1:n_kelp], # accelerations
-                                          [arch_array(arch, zeros(FT, 8, 3)) for n in 1:n_kelp], # old velocities
-                                          [arch_array(arch, zeros(FT, 8, 3)) for n in 1:n_kelp], # old accelerations
-                                          [arch_array(arch, zeros(FT, 8, 3)) for n in 1:n_kelp], # drag force
-                                          drag_fields)) # drag fiedls
-
-@inline guassian_smoothing(r, rᵉ) = 1.0#exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
-
-particles = LagrangianParticles(particle_struct; 
-                                dynamics = kelp_dynamics!, 
-                                parameters = (k = 10 ^ 5, 
-                                              α = 1.41, 
-                                              ρₒ = 1026.0, 
-                                              ρₐ = 1.225, 
-                                              g = 9.81, 
-                                              Cᵈˢ = 1.0, 
-                                              Cᵈᵇ= 0.4 * 12 ^ -0.485, 
-                                              Cᵃ = 3.0,
-                                              drag_smoothing = guassian_smoothing,
-                                              n_nodes = 8,
-                                              kᵈ = 10 ^ 4)) # for a linear spring system, to be non-oscillatory we need kᵈ>√k
-
-drag_nodes = CenterField(grid)
-
+kelps = GiantKelp(; grid, base_x = xs, base_y = ys, base_z = -8.0 * ones(length(xs)), scalefactor = sf, architecture = arch)
 @inline tidal_forcing(x, y, z, t, params) = - params.Aᵤ * params.ω * sin(params.ω * (t - params.t_central) - params.ϕᵤ) - params.Aᵥ * params.ω * cos(params.ω * (t - params.t_central) - params.ϕᵥ)
 
 u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
@@ -117,8 +65,7 @@ model = NonhydrostaticModel(; grid,
                               closure = AnisotropicMinimumDissipation(),
                               forcing = (u = Forcing(tidal_forcing, parameters = (Aᵤ = 0.25, Aᵥ = 0.0, ϕᵤ = 0.0, ϕᵥ = 0.0, t_central = 0.0, ω = 6.76e-5)), ),
                               boundary_conditions = (u = u_bcs, v = v_bcs, w = w_bcs),
-                              particles = particles,
-                              auxiliary_fields = (; drag_nodes))
+                              particles = kelps)
 
 uᵢ(x, y, z) = 0.25 * cos(6.76e-5 * 0.0)
 #vᵢ(x, y, z) = 4.68e-2 * cos(- 6.76e-5 * 1.58e7 - 3.80)
@@ -146,7 +93,7 @@ simulation.output_writers[:profiles] =
 
 function store_particles!(sim)
     jldopen("$(filepath)_particles.jld2", "a+") do file
-        file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.node_positions
+        file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.positions
     end
 end
 

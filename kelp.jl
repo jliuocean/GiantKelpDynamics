@@ -13,25 +13,7 @@ grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(P
 
 # ## Setup kelp particles
 
-a_kelp = GiantKelp(; grid, base_x = 5.0, base_y = 2.0, base_z = -8.0, architecture = arch)
-
-particle_struct = StructArray([a_kelp])
-
-@inline guassian_smoothing(r, rᵉ) = 1.0#exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
-
-particles = LagrangianParticles(particle_struct; 
-                                dynamics = kelp_dynamics!, 
-                                parameters = (k = 10^5, 
-                                              α = 1.41, 
-                                              ρₒ = 1026.0, 
-                                              ρₐ = 1.225, 
-                                              g = 9.81, 
-                                              Cᵈˢ = 1.0, 
-                                              Cᵈᵇ=0.4*12^(-0.485), 
-                                              Cᵃ = 3.0,
-                                              drag_smoothing = guassian_smoothing,
-                                              n_nodes = 8,
-                                              kᵈ = 0.5*10^3)) # for a linear spring system, to be non-oscillatory we need kᵈ>√k
+kelps = GiantKelp(;grid, base_x = [5.0], base_y = [2.0], base_z = [-8.0], architecture = arch)
 
 u₀ = 0.2
 
@@ -56,8 +38,8 @@ W_forcing = Forcing(relax_W, field_dependencies = (:w, ))
 @inline N_background(x, y, z, t) = tanh(-2 * z / 8)
 #N_relax = Relaxation(; rate = 1/10, target = N_background)
 mask_N(x, y, z) = ifelse(x < 3, 1, 0)
-@inline relax_U(x, y, z, t, N) = 10 * mask_N(x, y, z) * (N_background(x, y, z, t) - N)
-N_forcing = Forcing(relax_U, field_dependencies = (:N, ))
+@inline relax_N(x, y, z, t, N) = 1 * mask_N(x, y, z) * (N_background(x, y, z, t) - N)
+N_forcing = Forcing(relax_N, field_dependencies = (:N, ))
 
 drag_nodes = CenterField(grid)
 
@@ -67,7 +49,7 @@ model = NonhydrostaticModel(; grid,
                               closure = ScalarDiffusivity(κ = 1e-5, ν = 1e-5),
                               boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
                               forcing = (u = U_forcing, N = N_forcing),#v = V_forcing, w = W_forcing, N = N_forcing),
-                              particles = particles,
+                              particles = kelps,
                               auxiliary_fields = (; drag_nodes),
                               tracers = :N)
 
@@ -76,7 +58,7 @@ vᵢ(x, y, z) = u₀*randn()*0.1
 Nᵢ(x, y, z) = N_background(x, y, z, 0.0)
 set!(model, u=uᵢ, v=vᵢ, w=vᵢ, N=Nᵢ)
 
-filepath = "very_viscous_noisy"
+filepath = "new_formulation"
 
 simulation = Simulation(model, Δt=0.3, stop_time=3minute)
 
@@ -100,7 +82,7 @@ simulation.output_writers[:profiles] =
 
 function store_particles!(sim)
     jldopen("$(filepath)_particles.jld2", "a+") do file
-        file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.node_positions
+        file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.positions
     end
 end
 simulation.output_writers[:checkpointer] = Checkpointer(model, schedule=TimeInterval(5), prefix="checkpoint")
