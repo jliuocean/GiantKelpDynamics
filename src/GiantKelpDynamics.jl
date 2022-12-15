@@ -30,7 +30,7 @@ function x⃗₀(number, depth, l₀, initial_stretch)
     return x
 end
 
-struct GiantKelp{FT, VF, SF, FA} <: AbstractParticle
+struct GiantKelp{FT, VF, SF, FA, TS, SS} <: AbstractParticle
     # origin position and velocity
     x :: FT
     y :: FT
@@ -58,6 +58,9 @@ struct GiantKelp{FT, VF, SF, FA} <: AbstractParticle
     drag_forces :: VF
 
     drag_fields :: FA # array of drag fields for each node
+
+    timestepper :: TS
+    substeps :: SS
 end
 
 @inline guassian_smoothing(r, rᵉ) = exp(-(r) ^ 2 / (2 * rᵉ ^ 2))/sqrt(2 * π * rᵉ ^ 2)
@@ -152,9 +155,11 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                         old_velocities, 
                                         old_accelerations, 
                                         drag_forces,
-                                        drag_fields)
+                                        drag_fields,
+                                        timestepper,
+                                        substeps)
 
-    return LagrangianParticles(kelps; parameters = merge(parameters, (; timestepper, substeps)), dynamics = kelp_dynamics!)
+    return LagrangianParticles(kelps; parameters, dynamics = kelp_dynamics!)
 end
 
 @inline tension(Δx, l₀, Aᶜ, params) = Δx > l₀ && !(Δx == 0.0)  ? params.k * ((Δx - l₀) / l₀) ^ params.α * Aᶜ : 0.0
@@ -237,8 +242,8 @@ end
     Δx⃗⁻ = x⃗⁻ - x⃗ⁱ
     Δx⃗⁺ = x⃗⁺ - x⃗ⁱ
 
-    Δu⃗ⁱ⁻¹ = u⃗ⁱ⁻¹ - u⃗ⁱ
-    Δu⃗ⁱ⁺¹ = u⃗ⁱ⁺¹ - u⃗ⁱ
+    #Δu⃗ⁱ⁻¹ = u⃗ⁱ⁻¹ - u⃗ⁱ
+    #Δu⃗ⁱ⁺¹ = u⃗ⁱ⁺¹ - u⃗ⁱ
 
     l⁻ = (Δx⃗⁻[1] ^ 2 + Δx⃗⁻[2] ^ 2 + Δx⃗⁻[3] ^2) ^ 0.5
     l⁺ = (Δx⃗⁺[1] ^ 2 + Δx⃗⁺[2] ^ 2 + Δx⃗⁺[3] ^2) ^ 0.5
@@ -249,7 +254,7 @@ end
     Fⁱ = params.ρₒ * (Vᵐ + Vᵖ) .* (params.Cᵃ * a⃗ᵣₑₗ + a⃗ʷ)
 
     @inbounds begin 
-        accelerations[p, n, :] .= (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ - velocities[p, n, :]/params.τ
+        accelerations[p, n, :] .= (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ - velocities[p, n, :] ./ params.τ
         drag_forces[p, n, :] .= Fᴰ + Fⁱ # store for back reaction onto water
         
         if any(isnan.(accelerations[p, n, :])) error("F is NaN: i=$i $(Fᴮ) .+ $(Fᴰ) .+ $(T⁻) .+ $(T⁺) at $x, $y, $z") end
@@ -287,8 +292,8 @@ function kelp_dynamics!(particles, model, Δt)
     worksize = (n_particles, n_nodes)
     workgroup = (1, min(256, worksize[1]))
 
-    for substep in 1:particles.parameters.substeps        
-        for stage in stages(particles.parameters.timestepper)
+    for substep in 1:particles.properties.substeps        
+        for stage in stages(particles.properties.timestepper)
             step_kernel! = step_node!(device(model.architecture), workgroup, worksize)
 
             step_event = step_kernel!(particles.properties.x, 
@@ -312,7 +317,7 @@ function kelp_dynamics!(particles, model, Δt)
                                       model.timestepper.Gⁿ.w, 
                                       Δt/particles.parameters.substeps, 
                                       particles.parameters,
-                                      particles.parameters.timestepper,
+                                      particles.properties.timestepper,
                                       stage)
 
             wait(step_event)
