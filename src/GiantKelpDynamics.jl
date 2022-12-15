@@ -89,8 +89,8 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                     drag_smoothing = no_smoothing,
                                     n_nodes = 8,
                                     τ = 1.0),
-                      timestepper = RK3(),
-                      substeps = 1) where {FT}
+                      timestepper :: TS = RK3(),
+                      substeps :: SS = 1) where {FT, TS, SS}
 
     base_x = arch_array(architecture, base_x)
     base_y = arch_array(architecture, base_y)
@@ -141,23 +141,23 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
 
     FA = typeof(drag_fields)
 
-    kelps =  GiantKelp{AFT, VF, SF, FA}(base_x, base_y, base_z, 
-                                        base_x, base_y, base_z, 
-                                        scalefactor, 
-                                        positions, 
-                                        velocities, 
-                                        relaxed_lengths,
-                                        stipe_radii,
-                                        blade_areas, 
-                                        pneumatocyst_volumes, 
-                                        effective_radii, 
-                                        accelerations, 
-                                        old_velocities, 
-                                        old_accelerations, 
-                                        drag_forces,
-                                        drag_fields,
-                                        timestepper,
-                                        substeps)
+    kelps =  GiantKelp{AFT, VF, SF, FA, TS, SS}(base_x, base_y, base_z, 
+                                                base_x, base_y, base_z, 
+                                                scalefactor, 
+                                                positions, 
+                                                velocities, 
+                                                relaxed_lengths,
+                                                stipe_radii,
+                                                blade_areas, 
+                                                pneumatocyst_volumes, 
+                                                effective_radii, 
+                                                accelerations, 
+                                                old_velocities, 
+                                                old_accelerations, 
+                                                drag_forces,
+                                                drag_fields,
+                                                timestepper,
+                                                substeps)
 
     return LagrangianParticles(kelps; parameters, dynamics = kelp_dynamics!)
 end
