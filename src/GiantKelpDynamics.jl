@@ -75,17 +75,17 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                       initial_pneumatocyst_volume = 0.05 * ones(number_nodes),
                       initial_effective_radii = 0.5 * ones(number_nodes),
                       architecture = CPU(),
-                      paramerters = (k = 10 ^ 5, 
-                                     α = 1.41, 
-                                     ρₒ = 1026.0, 
-                                     ρₐ = 1.225, 
-                                     g = 9.81, 
-                                     Cᵈˢ = 1.0, 
-                                     Cᵈᵇ= 0.4 * 12 ^ -0.485, 
-                                     Cᵃ = 3.0,
-                                     drag_smoothing = no_smoothing,
-                                     n_nodes = 8,
-                                     kᵈ = 10 ^ 4)) where {FT}
+                      parameters = (k = 10 ^ 5, 
+                                    α = 1.41, 
+                                    ρₒ = 1026.0, 
+                                    ρₐ = 1.225, 
+                                    g = 9.81, 
+                                    Cᵈˢ = 1.0, 
+                                    Cᵈᵇ= 0.4 * 12 ^ -0.485, 
+                                    Cᵃ = 3.0,
+                                    drag_smoothing = no_smoothing,
+                                    n_nodes = 8,
+                                    kᵈ = 10 ^ 4)) where {FT}
 
     base_x = arch_array(architecture, base_x)
     base_y = arch_array(architecture, base_y)
@@ -152,7 +152,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                         drag_forces,
                                         drag_fields)
 
-    return LagrangianParticles(kelps; paramerters, dynamics = kelp_dynamics!)
+    return LagrangianParticles(kelps; parameters, dynamics = kelp_dynamics!)
 end
 
 @inline tension(Δx, l₀, Aᶜ, params) = Δx > l₀ && !(Δx == 0.0)  ? params.k * ((Δx - l₀) / l₀) ^ params.α * Aᶜ : 0.0
