@@ -217,8 +217,8 @@ end
     l⁻ = sqrt(dot(Δx⃗⁻, Δx⃗⁻))
     l⁺ = sqrt(dot(Δx⃗⁺, Δx⃗⁺))
 
-    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻ + eps(0.0)) - ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗ⁱ⁻¹, zeros(3))
-    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺ + eps(0.0)) - ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗ⁱ⁺¹, zeros(3))
+    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻ + eps(0.0)) + ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗ⁱ⁻¹, zeros(3))
+    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺ + eps(0.0)) + ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗ⁱ⁺¹, zeros(3))
 
     Fⁱ = params.ρₒ * (Vᵐ + Vᵖ) .* (params.Cᵃ * a⃗ᵣₑₗ + a⃗ʷ)
 
@@ -287,7 +287,10 @@ function kelp_dynamics!(particles, model, Δt)
                                                 model.timestepper.Gⁿ.u,
                                                 model.timestepper.Gⁿ.v,
                                                 model.timestepper.Gⁿ.w, 
-                                                Δt/n_substeps, γ, ζ, particles.parameters)
+                                                Δt/n_substeps, 
+                                                γ, 
+                                                ζ, 
+                                                particles.parameters)
 
             wait(step_node_event)
         end
@@ -358,7 +361,7 @@ end
                             apply_drag_kernel!, 
                             parameters)
                             
-    p = @index(Global, NTuple)
+    p = @index(Global)
     for n in 1:n_nodes # is this going to be a scalar indexing
 
         scalefactor = @inbounds scalefactors[p]
@@ -439,7 +442,7 @@ function drag_water!(model)
     node_weights_kernel! = node_weights!(device(model.architecture), workgroup, worksize)
     apply_drag_kernel! = apply_drag!(device(model.architecture), workgroup, worksize)
 
-    n_particles = particles.properties.n_nodes
+    n_particles = particles.parameters.n_nodes
     n_nodes = @inbounds length(particles.properties.node_relaxed_lengths[1])
 
     drag_water_node_kernel! = drag_node!(device(model.architecture), min(256, n_particles), n_particles)

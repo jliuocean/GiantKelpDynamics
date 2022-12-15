@@ -7,6 +7,7 @@ using Oceananigans.Architectures: arch_array
 using GiantKelpDynamics
 
 arch = CUDA.has_cuda_gpu() ? Oceananigans.GPU() : Oceananigans.CPU()
+FT = CUDA.has_cuda_gpu() ? Float32 : Float64
 
 if arch == Oceananigans.CPU()
     adapt_array(x) = x
@@ -16,7 +17,7 @@ end
 # ## Setup grid 
 Lx, Ly, Lz = 1kilometers, 1kilometers, 8
 Nx, Ny, Nz = 256, 256, 8
-grid = RectilinearGrid(arch, Float32; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
+grid = RectilinearGrid(arch, FT; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
 
 # ## Setup kelp particles
 
@@ -35,13 +36,15 @@ end
 
 particle_struct = StructArray(kelps);=#
 
-xs = Vector{Float32}()
-ys = Vector{Float32}()
-xs0 = Vector{Float32}()
-ys0 = Vector{Float32}()
-sf = Vector{Float32}()
+xs = Vector{FT}()
+ys = Vector{FT}()
+xs0 = Vector{FT}()
+ys0 = Vector{FT}()
+sf = Vector{FT}()
 
-for x in xnodes(Center, grid), y in ynodes(Center, grid)
+inv_density = 2
+
+for x in xnodes(Center, grid)[1:inv_density:end], y in ynodes(Center, grid)[1:inv_density:end]
     r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
     if r < forest_radius
         scalefactor = 16 * 10 * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
@@ -55,11 +58,11 @@ end
 
 n_kelp = length(xs)
 
-node_positions = Vector{CuArray{Float32, 2, CUDA.Mem.DeviceBuffer}}()
-blade_areas = Vector{CuArray{Float32, 1, CUDA.Mem.DeviceBuffer}}()
+node_positions = Vector{typeof(GiantKelpDynamics.x⃗₀(8, 8.0, 0.6, 2.5))}()
+blade_areas = Vector{typeof([i*50.0/8 for i in 1:8])}()
 drag_fields = Vector{Field}()
 for i in 1:n_kelp
-    push!(node_positions, arch_array(arch, GiantKelpDynamics.x⃗₀(8, 8, 0.6, 2.5)))
+    push!(node_positions, arch_array(arch, GiantKelpDynamics.x⃗₀(8, 8.0, 0.6, 2.5)))
     push!(blade_areas, arch_array(arch, 0.1 .* [i*50/8 for i in 1:8]))
     push!(drag_fields, CenterField(grid))
 end
@@ -70,18 +73,18 @@ particle_struct = StructArray{GiantKelp}((arch_array(arch, xs), # x
                                           arch_array(arch, xs), # x0
                                           arch_array(arch, ys), # y0
                                           arch_array(arch, -8.0 * ones(n_kelp)), # z0
-                                          arch_array(arch, sf), # scalefactor
+                                          arch_array(arch, sf .* inv_density), # scalefactor
                                           node_positions, # node_positions
-                                          [arch_array(arch, zeros(Float32, 8, 3)) for n in 1:n_kelp], # node_velocities
-                                          [arch_array(arch, 0.6 * ones(Float32, 8)) for n in 1:n_kelp], # relaxed length
-                                          [arch_array(arch, 0.03 * ones(Float32, 8)) for n in 1:n_kelp], # stipe radii
+                                          [arch_array(arch, zeros(FT, 8, 3)) for n in 1:n_kelp], # node_velocities
+                                          [arch_array(arch, 0.6 * ones(FT, 8)) for n in 1:n_kelp], # relaxed length
+                                          [arch_array(arch, 0.03 * ones(FT, 8)) for n in 1:n_kelp], # stipe radii
                                           blade_areas, # blade area
-                                          [arch_array(arch, 0.05 * ones(Float32, 8)) for n in 1:n_kelp], # pneumatocysts volume
-                                          [arch_array(arch, 0.5 * ones(Float32, 8)) for n in 1:n_kelp], # effective radii
-                                          [arch_array(arch, zeros(Float32, 8, 3)) for n in 1:n_kelp], # accelerations
-                                          [arch_array(arch, zeros(Float32, 8, 3)) for n in 1:n_kelp], # old velocities
-                                          [arch_array(arch, zeros(Float32, 8, 3)) for n in 1:n_kelp], # old accelerations
-                                          [arch_array(arch, zeros(Float32, 8, 3)) for n in 1:n_kelp], # drag force
+                                          [arch_array(arch, 0.05 * ones(FT, 8)) for n in 1:n_kelp], # pneumatocysts volume
+                                          [arch_array(arch, 3.906 * inv_density * ones(FT, 8)) for n in 1:n_kelp], # effective radii
+                                          [arch_array(arch, zeros(FT, 8, 3)) for n in 1:n_kelp], # accelerations
+                                          [arch_array(arch, zeros(FT, 8, 3)) for n in 1:n_kelp], # old velocities
+                                          [arch_array(arch, zeros(FT, 8, 3)) for n in 1:n_kelp], # old accelerations
+                                          [arch_array(arch, zeros(FT, 8, 3)) for n in 1:n_kelp], # drag force
                                           drag_fields)) # drag fiedls
 
 @inline guassian_smoothing(r, rᵉ) = 1.0#exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
@@ -124,7 +127,7 @@ set!(model, u = uᵢ)
 
 filepath = "forest_no_coupling"
 
-simulation = Simulation(model, Δt = 1.0, stop_time = 1year)
+simulation = Simulation(model, Δt = 0.05, stop_time = 1year)
 
 #wizard = TimeStepWizard(cfl = 0.5, max_change = 1.1, diffusive_cfl = 0.5)
 #simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
@@ -148,6 +151,22 @@ function store_particles!(sim)
 end
 
 simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(1minute))
+simulation.stop_time = 10
+run!(simulation)
+
+simulation.Δt = 2
+simulation.stop_time = 15
+run!(simulation)
+
+simulation.Δt = 4
+simulation.stop_time = 20
+run!(simulation)
+
+simulation.Δt = 6
+simulation.stop_time = 25
+run!(simulation)
+
+simulation.Δt = 8
 simulation.stop_time = 30
 run!(simulation)
 
@@ -196,7 +215,7 @@ end
 CairoMakie.record(fig, "$(filepath)_vertical_slice.mp4", frame_iterator; framerate = framerate) do i
     print("$i" * " \r")
     n[] = i
-    ax.title = "t=$(prettytime(parse(Float32, times[i])))"
+    ax.title = "t=$(prettytime(parse(FT, times[i])))"
 end
 
 
@@ -218,14 +237,14 @@ CairoMakie.record(fig, "$(filepath)_horizontal_u.mp4", frame_iterator; framerate
     n[] = i
     msg = string("Plotting frame ", i, " of ", nframes)
     print(msg * " \r")
-    ax_u.title = "t=$(prettytime(parse(Float32, times[i])))"
+    ax_u.title = "t=$(prettytime(parse(FT, times[i])))"
 end
 
 fig = Figure()
 
-z_xy = zeros(Float32, Nx, Ny)
-y_xz = ones(Float32, Nx, Nz).*2
-x_yz = zeros(Float32, Ny, Nz)
+z_xy = zeros(FT, Nx, Ny)
+y_xz = ones(FT, Nx, Nz).*2
+x_yz = zeros(FT, Ny, Nz)
 
 ax = Axis3(fig[1, 1], aspect=(1, .5*Ly/Lx, Lz/Lx), limits=(0, Lx, Ly/2, Ly, -Lz, 0))
 
@@ -247,6 +266,6 @@ GLMakie.record(fig, "$(filepath)_3d_plot.mp4", frame_iterator; framerate = frame
     n[] = i
     msg = string("Plotting frame ", i, " of ", nframes)
     print(msg * " \r")
-    ax.title = "t=$(prettytime(parse(Float32, times[i])))"
+    ax.title = "t=$(prettytime(parse(FT, times[i])))"
 end
 =#

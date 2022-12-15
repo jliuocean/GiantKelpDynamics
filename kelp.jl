@@ -33,7 +33,7 @@ particles = LagrangianParticles(particle_struct;
                                               n_nodes = 8,
                                               kᵈ = 0.5*10^3)) # for a linear spring system, to be non-oscillatory we need kᵈ>√k
 
-u₀ = 1.0
+u₀ = 0.2
 
 u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
@@ -76,7 +76,7 @@ vᵢ(x, y, z) = u₀*randn()*0.1
 Nᵢ(x, y, z) = N_background(x, y, z, 0.0)
 set!(model, u=uᵢ, v=vᵢ, w=vᵢ, N=Nᵢ)
 
-filepath = "very_viscous_noisy_deeper_initial_oposite_damping_sign"
+filepath = "very_viscous_noisy"
 
 simulation = Simulation(model, Δt=0.3, stop_time=3minute)
 
@@ -95,7 +95,7 @@ simulation.callbacks[:progress] = Callback(progress_message, IterationInterval(2
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, merge(model.velocities, model.tracers),
                          filename = "$filepath.jld2",
-                         schedule = TimeInterval(0.1),
+                         schedule = TimeInterval(1),
                          overwrite_existing = true)
 
 function store_particles!(sim)
@@ -104,7 +104,7 @@ function store_particles!(sim)
     end
 end
 
-simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(0.1))
+simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(1))
 simulation.stop_time = 30
 run!(simulation)
 
