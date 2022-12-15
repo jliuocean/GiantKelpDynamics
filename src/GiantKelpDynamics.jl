@@ -60,7 +60,7 @@ struct GiantKelp{FT, VF, SF, FA} <: AbstractParticle
     drag_fields :: FA # array of drag fields for each node
 end
 
-@inline guassian_smoothing(r, rᵉ) = exp(-(r)^2/(2*rᵉ^2))/sqrt(2*π*rᵉ^2)
+@inline guassian_smoothing(r, rᵉ) = exp(-(r) ^ 2 / (2 * rᵉ ^ 2))/sqrt(2 * π * rᵉ ^ 2)
 @inline no_smoothing(r, rᵉ) = 1.0
 
 function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
@@ -192,7 +192,7 @@ end
 
     x, y, z = @inbounds [x_base[p], y_base[p], z_base[p]] + x⃗ⁱ
 
-    l = sqrt(dot(Δx⃗, Δx⃗))
+    l = (Δx⃗[1] ^ 2 + Δx⃗[2] ^ 2 + Δx⃗[3] ^2) ^ 0.5
     Vᵖ = pneumatocyst_volumes[p, n]
 
     Fᴮ = @inbounds (params.ρₒ - 500) * Vᵖ * [0.0, 0.0, params.g] #currently assuming kelp is nutrally buoyant except for pneumatocysts
@@ -208,7 +208,7 @@ end
 
     u⃗ʷ = [interpolate.([water_u, water_v, water_w], x, y, z)...]
     u⃗ᵣₑₗ = u⃗ʷ - u⃗ⁱ
-    sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
+    sᵣₑₗ = (u⃗ᵣₑₗ[1] ^ 2 + u⃗ᵣₑₗ[2] ^ 2 + u⃗ᵣₑₗ[3] ^ 2) ^ 0.5
 
     a⃗ʷ = [interpolate.([water_du, water_dv, water_dw], x, y, z)...]
     a⃗ⁱ = accelerations[p, n, :]
@@ -240,8 +240,8 @@ end
     Δu⃗ⁱ⁻¹ = u⃗ⁱ⁻¹ - u⃗ⁱ
     Δu⃗ⁱ⁺¹ = u⃗ⁱ⁺¹ - u⃗ⁱ
 
-    l⁻ = sqrt(dot(Δx⃗⁻, Δx⃗⁻))
-    l⁺ = sqrt(dot(Δx⃗⁺, Δx⃗⁺))
+    l⁻ = (Δx⃗⁻[1] ^ 2 + Δx⃗⁻[2] ^ 2 + Δx⃗⁻[3] ^2) ^ 0.5
+    l⁺ = (Δx⃗⁺[1] ^ 2 + Δx⃗⁺[2] ^ 2 + Δx⃗⁺[3] ^2) ^ 0.5
 
     T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻ + eps(0.0))# + ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗ⁱ⁻¹, zeros(3))
     T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺ + eps(0.0))# + ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗ⁱ⁺¹, zeros(3))
@@ -356,7 +356,7 @@ end
     x, y, z = node(Center(), Center(), Center(), i, j, k, grid)
 
     x_, y_, z_ = polar_transform(x, y, z)
-    r = sqrt(x_ ^ 2 + y_ ^ 2)
+    r = (x_ ^ 2 + y_ ^ 2) ^ 0.5
     @inbounds drag_field[i, j, k] = ifelse((r < rᵉ) & (-l⁻ < z_ < l⁺), parameters.drag_smoothing(r, rᵉ), 0.0)
 end
 
@@ -408,23 +408,27 @@ end
     Δx⃗ = x⃗⁺ - x⃗⁻
             
     if n == 1
-        l⁻ = sqrt(dot(positions[p, n, :], positions[p, n, :]))
+        l⁻ = (positions[p, n, 1] ^ 2 + positions[p, n, 2] ^ 2 + positions[p, n, 3] ^ 2) ^ 0.5
     else
-        l⁻ = sqrt(dot(positions[p, n, :] - positions[p, n - 1, :], positions[p, n, :] - positions[p, n - 1, :]))/2
+        dp = positions[p, n, :] - positions[p, n - 1, :]
+        l⁻ = (dp[1] ^ 2 + dp[2] ^ 2 + dp[3] ^ 2) ^ 0.5 /2
     end
         
     θ = atan(Δx⃗[2] / (Δx⃗[1] + eps(0.0))) + π * 0 ^ (1 + sign(Δx⃗[1]))
-    ϕ = atan(sqrt(Δx⃗[1] ^ 2 + Δx⃗[2] ^ 2 + eps(0.0)) / Δx⃗[3])
+    ϕ = atan((Δx⃗[1] ^ 2 + Δx⃗[2] ^ 2 + eps(0.0)) ^ 0.5 / Δx⃗[3])
 
-    cosθ⁻ = dot(Δx⃗, x⃗ - x⃗⁻) / (sqrt(dot(Δx⃗, Δx⃗)) * sqrt(dot(x⃗ - x⃗⁻, x⃗ - x⃗⁻)))
+    
+    cosθ⁻ = (Δx⃗[1] * (x⃗ - x⃗⁻)[1] + Δx⃗[2] * (x⃗ - x⃗⁻)[2] + Δx⃗[3] * (x⃗ - x⃗⁻)[3]) / ((Δx⃗[1] ^ 2 + Δx⃗[2] ^ 2 + Δx⃗[3] ^ 2) ^ 0.5 * ((x⃗ - x⃗⁻)[1] ^ 2 + (x⃗ - x⃗⁻)[2] ^ 2 + (x⃗ - x⃗⁻)[3] ^ 2) ^ 0.5)
     θ⁻ = -1.0 <= cosθ⁻ <= 1.0 ? acos(cosθ⁻) : 0.0
 
     if n == n_nodes
-        l⁺ = sqrt(dot(positions[p, n, :] - positions[p, n - 1, :], positions[p, n, :] - positions[p, n - 1, :])) / 2
+        dp = positions[p, n, :] - positions[p, n - 1, :]
+        l⁺ = (dp[1] ^ 2 + dp[2] ^ 2 + dp[3] ^ 2) ^ 0.5 /2
         θ⁺ = θ⁻
     else
-        l⁺ = sqrt(dot(positions[p, n + 1, :] - positions[p, n, :], positions[p, n + 1, :] - positions[p, n, :])) / 2
-        cosθ⁺ = - dot(Δx⃗, x⃗⁺ - x⃗) / (sqrt(dot(Δx⃗, Δx⃗)) * sqrt(dot(x⃗⁺ - x⃗, x⃗⁺ - x⃗)))
+        dp = positions[p, n + 1, :] - positions[p, n, :]
+        l⁺ = (dp[1] ^ 2 + dp[2] ^ 2 + dp[3] ^ 2) ^ 0.5 /2
+        cosθ⁺ = - (Δx⃗[1] * (x⃗⁺ - x⃗)[1] + Δx⃗[2] * (x⃗⁺ - x⃗)[2] + Δx⃗[3] * (x⃗⁺ - x⃗)[3]) / ((Δx⃗[1] ^ 2 + Δx⃗[2] ^ 2 + Δx⃗[3] ^ 2) ^ 0.5 * ((x⃗⁺ - x⃗)[1] ^ 2 + (x⃗⁺ - x⃗)[2] ^ 2 + (x⃗⁺ - x⃗)[3] ^ 2) ^ 0.5)
         θ⁺ = -1.0 <= cosθ⁺ <= 1.0 ? acos(cosθ⁺) : 0.0
     end
 
