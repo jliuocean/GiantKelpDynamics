@@ -13,7 +13,7 @@ grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(P
 
 # ## Setup kelp particles
 
-kelps = GiantKelp(;grid, base_x = [5.0], base_y = [2.0], base_z = [-8.0], architecture = arch, substeps = 10)
+kelps = GiantKelp(;grid, base_x = [5.0], base_y = [2.0], base_z = [-8.0], architecture = arch, max_Δt = Inf)
 
 u₀ = 0.2
 
@@ -44,7 +44,7 @@ N_forcing = Forcing(relax_N, field_dependencies = (:N, ))
 model = NonhydrostaticModel(; grid,
                               advection = WENO(grid),
                               timestepper = :RungeKutta3,
-                              closure = ScalarDiffusivity(κ = 1e-5, ν = 1e-5),
+                              closure = ScalarDiffusivity(κ = 1e-4, ν = 1e-4),
                               boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
                               forcing = (u = U_forcing, N = N_forcing),#v = V_forcing, w = W_forcing, N = N_forcing),
                               particles = kelps,
@@ -82,7 +82,7 @@ function store_particles!(sim)
         file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.positions
     end
 end
-simulation.output_writers[:checkpointer] = Checkpointer(model, schedule=TimeInterval(5), prefix="checkpoint")
+#simulation.output_writers[:checkpointer] = Checkpointer(model, schedule=TimeInterval(5), prefix="checkpoint")
 simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(1))
 simulation.stop_time = 25
 run!(simulation)

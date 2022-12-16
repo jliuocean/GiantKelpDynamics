@@ -18,5 +18,5 @@ struct Euler end
     return Δt * u⃗
 end
 
-stages(::RK3) = 1:3
-stages(::Euler) = 1:1
+@inline stages(::RK3) = 1:3
+@inline stages(::Euler) = 1:1
