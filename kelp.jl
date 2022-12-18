@@ -8,12 +8,12 @@ arch = CUDA.has_cuda_gpu() ? Oceananigans.GPU() : Oceananigans.CPU()
 
 # ## Setup grid 
 Lx, Ly, Lz = 32, 4, 8
-Nx, Ny, Nz = 8 .* (Lx, Ly, Lz)
+Nx, Ny, Nz = 4 .* (Lx, Ly, Lz)
 grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
 
 # ## Setup kelp particles
 
-kelps = GiantKelp(;grid, base_x = [5.0], base_y = [2.0], base_z = [-8.0], architecture = arch, max_Δt = Inf)
+kelps = GiantKelp(;grid, base_x = [5.0], base_y = [2.0], base_z = [-8.0], architecture = arch, max_Δt = Inf, timestepper = GiantKelpDynamics.Euler())
 
 u₀ = 0.2
 
@@ -55,9 +55,9 @@ vᵢ(x, y, z) = u₀*randn()*0.1
 Nᵢ(x, y, z) = N_background(x, y, z, 0.0)
 set!(model, u=uᵢ, v=vᵢ, w=vᵢ, N=Nᵢ)
 
-filepath = "new_formulation"
+filepath = "new_formulation_low_res"
 
-simulation = Simulation(model, Δt=0.3, stop_time=3minute)
+simulation = Simulation(model, Δt=0.2, stop_time=3minute)
 
 #simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
@@ -82,13 +82,17 @@ function store_particles!(sim)
         file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.positions
     end
 end
-#simulation.output_writers[:checkpointer] = Checkpointer(model, schedule=TimeInterval(5), prefix="checkpoint")
+simulation.output_writers[:checkpointer] = Checkpointer(model, schedule=TimeInterval(5), prefix="checkpoint")
 simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(1))
-simulation.stop_time = 25
+simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
+
+# transient response to the kelp starting to move 
+simulation.stop_time = 1
+simulation.Δt = 0.01
 run!(simulation)
 
-simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 simulation.stop_time = 3minutes
+simulation.Δt = 0.1
 run!(simulation)
 
 #=

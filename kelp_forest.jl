@@ -23,18 +23,6 @@ grid = RectilinearGrid(arch, FT; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topolog
 
 forest_radius = 100
 smoothing_disance = 3.0
-#=
-kelps = GiantKelp[]
-
-for x in xnodes(Center, grid), y in ynodes(Center, grid)
-    r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
-    if r < forest_radius
-        scalefactor = 16 * 10 * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
-        push!(kelps, GiantKelp(; grid, base_x = x, base_y = y, base_z = -8.0, scalefactor = scalefactor, architecture = arch))
-    end
-end
-
-particle_struct = StructArray(kelps);=#
 
 xs = Vector{FT}()
 ys = Vector{FT}()
@@ -52,7 +40,8 @@ for x in xnodes(Center, grid)[1:inv_density:end], y in ynodes(Center, grid)[1:in
     end
 end
 
-kelps = GiantKelp(; grid, base_x = xs, base_y = ys, base_z = -8.0 * ones(length(xs)), scalefactor = sf, architecture = arch)
+kelps = GiantKelp(;grid, base_x = xs, base_y = ys, base_z = -8.0 * ones(length(xs)), scalefactor = sf, architecture = arch, max_Δt = Inf, timestepper = GiantKelpDynamics.Euler())
+
 @inline tidal_forcing(x, y, z, t, params) = - params.Aᵤ * params.ω * sin(params.ω * (t - params.t_central) - params.ϕᵤ) - params.Aᵥ * params.ω * cos(params.ω * (t - params.t_central) - params.ϕᵥ)
 
 u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
@@ -67,17 +56,17 @@ model = NonhydrostaticModel(; grid,
                               boundary_conditions = (u = u_bcs, v = v_bcs, w = w_bcs),
                               particles = kelps)
 
-uᵢ(x, y, z) = 0.25 * cos(6.76e-5 * 0.0)
+uᵢ(x, y, z) = 0.25 * cos(6.76e-5 * 0.0) * (1 + 0.01*(rand() - 1))
 #vᵢ(x, y, z) = 4.68e-2 * cos(- 6.76e-5 * 1.58e7 - 3.80)
 
 set!(model, u = uᵢ)
 
-filepath = "forest_no_coupling"
+filepath = "forest"
 
 simulation = Simulation(model, Δt = 0.05, stop_time = 1year)
 
-#wizard = TimeStepWizard(cfl = 0.5, max_change = 1.1, diffusive_cfl = 0.5)
-#simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
+wizard = TimeStepWizard(cfl = 0.8, max_change = 1.1, diffusive_cfl = 0.8)
+simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
 
 progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, min(|u|) = %.1e ms⁻¹, wall time: %s\n",
                                     iteration(sim), prettytime(sim), prettytime(sim.Δt),
@@ -98,25 +87,6 @@ function store_particles!(sim)
 end
 
 simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(1minute))
-simulation.stop_time = 10
-run!(simulation)
-
-simulation.Δt = 2
-simulation.stop_time = 15
-run!(simulation)
-
-simulation.Δt = 4
-simulation.stop_time = 20
-run!(simulation)
-
-simulation.Δt = 6
-simulation.stop_time = 25
-run!(simulation)
-
-simulation.Δt = 8
-simulation.stop_time = 30
-run!(simulation)
-
 simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 simulation.stop_time = 3minutes
 run!(simulation)

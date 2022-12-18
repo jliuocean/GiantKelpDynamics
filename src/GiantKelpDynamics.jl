@@ -70,7 +70,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                       depth = 8.0,
                       segment_unstretched_length = 0.6,
                       initial_stipe_radii = 0.03,
-                      initial_blade_areas = 0.1 .* [i*50/number_nodes for i in 1:number_nodes],
+                      initial_blade_areas = 0.1 .* [i*20/number_nodes for i in 1:number_nodes],
                       initial_pneumatocyst_volume = 0.05 * ones(number_nodes),
                       initial_effective_radii = 0.5 * ones(number_nodes),
                       architecture = CPU(),
@@ -84,7 +84,8 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                     Cᵃ = 3.0,
                                     drag_smoothing = no_smoothing,
                                     n_nodes = 8,
-                                    τ = 1.0),
+                                    τ = 5.0,
+                                    kᵈ = 500),
                       timestepper = RK3(),
                       max_Δt = 0.5) where {FT}
 
@@ -117,12 +118,12 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
     old_accelerations = [arch_array(architecture, zeros(FT, number_nodes, 3)) for p in 1:number_kelp]
     drag_forces = [arch_array(architecture, zeros(FT, number_nodes, 3)) for p in 1:number_kelp]
 
-    drag_fields = [CenterField(grid) for p in 1:number_kelp]
+    drag_field = [CenterField(grid) for p in 1:number_kelp]
 
-    FA = typeof(drag_fields)
+    FA = typeof(drag_field)
 
     kelps = StructArray{GiantKelp{AFT, VF, SF, FA}}((base_x, base_y, base_z, 
-                                                     base_x, base_y, base_z, 
+                                                     copy(base_x), copy(base_y), copy(base_z), 
                                                      scalefactor, 
                                                      positions, 
                                                      velocities, 
@@ -135,7 +136,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                                      old_velocities, 
                                                      old_accelerations, 
                                                      drag_forces,
-                                                     drag_fields))
+                                                     drag_field))
 
     return LagrangianParticles(kelps; parameters = merge(parameters, (; timestepper, max_Δt)), dynamics = kelp_dynamics!)
 end
@@ -191,7 +192,7 @@ end
     Aᵇ = @inbounds blade_areas[p][n]
     rˢ = @inbounds stipe_radii[p][n]
     Vᵐ = π * rˢ ^ 2 * l + Aᵇ * 0.01 # TODO: change thickness to some realistic thing
-    mᵉ = (Vᵐ + params.Cᵃ * (Vᵐ + Vᵖ)) * params.ρₒ
+    mᵉ = (Vᵐ + params.Cᵃ * (Vᵐ + Vᵖ)) * params.ρₒ + Vᵖ * (params.ρₒ - 500) 
 
     u⃗ʷ = [interpolate.(values(water_velocities), x, y, z)...]
     u⃗ᵣₑₗ = u⃗ʷ - u⃗ⁱ
@@ -199,18 +200,18 @@ end
 
     a⃗ʷ = [interpolate.(values(water_accelerations), x, y, z)...]
     a⃗ⁱ = accelerations[p][n, :]
-    a⃗ᵣₑₗ = a⃗ʷ - a⃗ⁱ
+    a⃗ᵣₑₗ = a⃗ʷ - a⃗ⁱ 
 
     θ = acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx⃗)) / (sᵣₑₗ * l + eps(0.0))))
     Aˢ = @inbounds 2 * rˢ * l * abs(sin(θ)) + π * rˢ * abs(cos(θ))
 
-    Fᴰ = .5 * params.ρₒ * (params.Cᵈˢ * Aˢ + params.Cᵈᵇ * Aᵇ) * sᵣₑₗ .* u⃗ᵣₑₗ
+    Fᴰ = 0.5 * params.ρₒ * (params.Cᵈˢ * Aˢ + params.Cᵈᵇ * Aᵇ) * sᵣₑₗ .* u⃗ᵣₑₗ
 
     if n == @inbounds length(relaxed_lengths[p])
-        x⃗⁺ = x⃗ⁱ - ones(3) # doesn't matter but needs to be non-zero
-        u⃗ⁱ⁺¹ = zeros(3) # doesn't matter
-        Aᶜ⁺ = 0.0 # doesn't matter
-        l₀⁺ = @inbounds relaxed_lengths[p][n] # again, doesn't matter but probs shouldn't be zero
+        x⃗⁺ = x⃗ⁱ 
+        u⃗ⁱ⁺¹ = u⃗ⁱ
+        Aᶜ⁺ = 0.0 
+        l₀⁺ = @inbounds relaxed_lengths[p][n] 
     else
         x⃗⁺ = @inbounds positions[p][n + 1, :]
         u⃗ⁱ⁺¹ = @inbounds velocities[p][n + 1, :]
@@ -230,10 +231,16 @@ end
     l⁻ = sqrt(dot(Δx⃗⁻, Δx⃗⁻))
     l⁺ = sqrt(dot(Δx⃗⁺, Δx⃗⁺))
 
-    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻ + eps(0.0))# + ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗ⁱ⁻¹, zeros(3))
-    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺ + eps(0.0))# + ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗ⁱ⁺¹, zeros(3))
+    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, params) .* Δx⃗⁻ ./ (l⁻ + eps(0.0)) #+ ifelse(l⁻ > l₀⁻, params.kᵈ * Δu⃗ⁱ⁻¹, zeros(3))
+    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, params) .* Δx⃗⁺ ./ (l⁺ + eps(0.0)) #+ ifelse(l⁺ > l₀⁺, params.kᵈ * Δu⃗ⁱ⁺¹, zeros(3))
 
-    Fⁱ = params.ρₒ * (Vᵐ + Vᵖ) .* (params.Cᵃ * a⃗ᵣₑₗ + a⃗ʷ)
+    Fⁱ = params. ρₒ * (Vᵐ + Vᵖ) .*  a⃗ʷ
+
+    #if any(abs.(Fⁱ)/abs.(Fᴰ) .> 1000)
+    #    @show Fⁱ
+    #    @show Fᴰ
+    #    Fⁱ *= maximum(abs, 1000 .* Fᴰ ./ Fⁱ)
+    #end
 
     @inbounds begin 
         accelerations[p][n, :] .= (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ - velocities[p][n, :] ./ params.τ
@@ -305,7 +312,7 @@ struct LocalTransform{X, RZ, RX, RN, RP}
 end
 
 @inline function (transform::LocalTransform)(x, y, z)
-    x⃗_ = transform.R₁*(transform.R₂*([x, y, z] - transform.x⃗₀))
+    x⃗_ = transform.R₁ * (transform.R₂ * ([x, y, z] - transform.x⃗₀))
 
     if x⃗_[3]>=0.0
         x_, y_, z_ = transform.R₃⁺ * x⃗_
@@ -353,14 +360,14 @@ end
                             scalefactors, positions, 
                             effective_radii, 
                             drag_forces, 
-                            grid, drag_fields, 
+                            grid, drag_field, 
                             n_nodes, 
                             water_accelerations, 
                             weights_kernel!, 
                             apply_drag_kernel!, 
                             parameters)
                             
-    p = @index(Global, NTuple)
+    p = @index(Global)
     scalefactor = @inbounds scalefactors[p]
 
     for n = 1:n_nodes
@@ -409,10 +416,10 @@ end
             θ⁺ = -1.0 <= cosθ⁺ <= 1.0 ? acos(cosθ⁺) : 0.0
         end
 
-        weights_event = @inbounds weights_kernel!(drag_fields[p], grid, rᵉ, l⁺, l⁻, LocalTransform(θ, ϕ, θ⁺, θ⁻, x⃗), parameters)
+        weights_event = @inbounds weights_kernel!(drag_field[p], grid, rᵉ, l⁺, l⁻, LocalTransform(θ, ϕ, θ⁺, θ⁻, x⃗), parameters)
         wait(weights_event)
 
-        normalisation = sum(@inbounds drag_fields[p])
+        normalisation = sum(@inbounds drag_field[p])
         Fᴰ = @inbounds drag_forces[p][n, :]
 
         # fallback if nodes are closer together than gridpoints and the line joining them is parallel to a grid Axis
@@ -430,7 +437,7 @@ end
 
             @warn "Used fallback drag application as stencil found no nodes, this should be concerning if not in the initial transient response at $p, $n"
         else
-            apply_drag_event = @inbounds apply_drag_kernel!(water_accelerations, drag_fields[p], normalisation, grid, Fᴰ, scalefactor, parameters)
+            apply_drag_event = @inbounds apply_drag_kernel!(water_accelerations, drag_field[p], normalisation, grid, Fᴰ, scalefactor, parameters)
             wait(apply_drag_event)
         end
     end
@@ -455,7 +462,7 @@ function drag_water!(model)
                                           particles.properties.effective_radii, 
                                           particles.properties.drag_forces, 
                                           model.grid, 
-                                          particles.properties.drag_fields, 
+                                          particles.properties.drag_field, 
                                           n_nodes, 
                                           water_accelerations, 
                                           weights_kernel!, 
