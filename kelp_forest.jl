@@ -28,7 +28,7 @@ xs = Vector{FT}()
 ys = Vector{FT}()
 sf = Vector{FT}()
 
-inv_density = 2
+inv_density = 8
 
 for x in xnodes(Center, grid)[1:inv_density:end], y in ynodes(Center, grid)[1:inv_density:end]
     r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
@@ -40,7 +40,10 @@ for x in xnodes(Center, grid)[1:inv_density:end], y in ynodes(Center, grid)[1:in
     end
 end
 
-kelps = GiantKelp(;grid, base_x = xs, base_y = ys, base_z = -8.0 * ones(length(xs)), scalefactor = sf, architecture = arch, max_Δt = Inf, timestepper = GiantKelpDynamics.Euler())
+number_nodes = 4
+segment_unstretched_length = 1.2
+
+kelps = GiantKelp(;grid, number_nodes, segment_unstretched_length, base_x = xs, base_y = ys, base_z = -8.0 * ones(length(xs)), scalefactor = sf, initial_effective_radii = 0.5 * inv_density * ones(number_nodes), architecture = arch, max_Δt = Inf, timestepper = GiantKelpDynamics.Euler())
 
 @inline tidal_forcing(x, y, z, t, params) = - params.Aᵤ * params.ω * sin(params.ω * (t - params.t_central) - params.ϕᵤ) - params.Aᵥ * params.ω * cos(params.ω * (t - params.t_central) - params.ϕᵥ)
 

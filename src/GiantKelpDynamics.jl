@@ -83,7 +83,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                     Cᵈᵇ= 0.4 * 12 ^ -0.485, 
                                     Cᵃ = 3.0,
                                     drag_smoothing = no_smoothing,
-                                    n_nodes = 8,
+                                    n_nodes = number_nodes,
                                     τ = 5.0,
                                     kᵈ = 500),
                       timestepper = RK3(),
@@ -181,12 +181,12 @@ end
     x, y, z = @inbounds [x_base[p], y_base[p], z_base[p]] + x⃗ⁱ
 
     l = sqrt(dot(Δx⃗, Δx⃗))
-    Vᵖ = pneumatocyst_volumes[p][n]
+    Vᵖ = @inbounds pneumatocyst_volumes[p][n]
 
     Fᴮ = @inbounds (params.ρₒ - 500) * Vᵖ * [0.0, 0.0, params.g] #currently assuming kelp is nutrally buoyant except for pneumatocysts
 
-    if Fᴮ[3] > 0 && z >= 0  # i.e. floating up not sinking, and outside of the surface
-        Fᴮ[3] = 0.0
+    if @inbounds Fᴮ[3] > 0 && z >= 0  # i.e. floating up not sinking, and outside of the surface
+        @inbounds Fᴮ[3] = 0.0
     end
 
     Aᵇ = @inbounds blade_areas[p][n]
@@ -194,13 +194,13 @@ end
     Vᵐ = π * rˢ ^ 2 * l + Aᵇ * 0.01 # TODO: change thickness to some realistic thing
     mᵉ = (Vᵐ + params.Cᵃ * (Vᵐ + Vᵖ)) * params.ρₒ + Vᵖ * (params.ρₒ - 500) 
 
-    u⃗ʷ = [interpolate.(values(water_velocities), x, y, z)...]
+    u⃗ʷ = @inbounds ntuple(n -> interpolate(water_velocities[n]), 3)
     u⃗ᵣₑₗ = u⃗ʷ - u⃗ⁱ
     sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
 
-    a⃗ʷ = [interpolate.(values(water_accelerations), x, y, z)...]
-    a⃗ⁱ = accelerations[p][n, :]
-    a⃗ᵣₑₗ = a⃗ʷ - a⃗ⁱ 
+    a⃗ʷ = @inbounds ntuple(n -> interpolate(water_accelerations[n]), 3)
+    a⃗ⁱ = @inbounds accelerations[p][n, :]
+    #a⃗ᵣₑₗ = a⃗ʷ - a⃗ⁱ 
 
     θ = acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx⃗)) / (sᵣₑₗ * l + eps(0.0))))
     Aˢ = @inbounds 2 * rˢ * l * abs(sin(θ)) + π * rˢ * abs(cos(θ))
@@ -273,11 +273,13 @@ function kelp_dynamics!(particles, model, Δt)
     worksize = (n_particles, n_nodes)
     workgroup = (1, min(256, worksize[1]))
 
-    n_substeps = max(1, floor(Int, Δt / particles.parameters.max_Δt))
-    @inbounds for substep in 1:n_substeps        
-        for stage in stages(particles.parameters.timestepper)
-            step_kernel! = step_node!(device(model.architecture), workgroup, worksize)
+    step_kernel! = step_node!(device(model.architecture), workgroup, worksize)
 
+    n_substeps = max(1, floor(Int, Δt / particles.parameters.max_Δt))
+
+    water_accelerations = @inbounds model.timestepper.Gⁿ[(:u, :v, :w)]
+    for substep in 1:n_substeps        
+        for stage in stages(particles.parameters.timestepper)
             step_event = step_kernel!(particles.properties.x, 
                                       particles.properties.y, 
                                       particles.properties.z, 
@@ -292,7 +294,7 @@ function kelp_dynamics!(particles, model, Δt)
                                       particles.properties.old_velocities, 
                                       particles.properties.old_accelerations, 
                                       model.velocities,
-                                      model.timestepper.Gⁿ[(:u, :v, :w)], 
+                                      water_accelerations, 
                                       Δt / n_substeps, 
                                       particles.parameters,
                                       particles.parameters.timestepper,
@@ -312,9 +314,9 @@ struct LocalTransform{X, RZ, RX, RN, RP}
 end
 
 @inline function (transform::LocalTransform)(x, y, z)
-    x⃗_ = transform.R₁ * (transform.R₂ * ([x, y, z] - transform.x⃗₀))
+    x⃗_ = @inbounds transform.R₁ * (transform.R₂ * ([x, y, z] - transform.x⃗₀))
 
-    if x⃗_[3]>=0.0
+    if @inbounds x⃗_[3]>=0.0
         x_, y_, z_ = transform.R₃⁺ * x⃗_
     else
         x_, y_, z_ = transform.R₃⁻ * x⃗_
