@@ -68,7 +68,7 @@ filepath = "forest"
 
 simulation = Simulation(model, Δt = 0.05, stop_time = 1year)
 
-wizard = TimeStepWizard(cfl = 0.8, max_change = 1.1, diffusive_cfl = 0.8)
+wizard = TimeStepWizard(cfl = 0.8, max_change = Inf, min_change = 0.0)
 simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
 
 progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, min(|u|) = %.1e ms⁻¹, wall time: %s\n",

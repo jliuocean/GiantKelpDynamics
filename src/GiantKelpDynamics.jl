@@ -194,12 +194,12 @@ end
     Vᵐ = π * rˢ ^ 2 * l + Aᵇ * 0.01 # TODO: change thickness to some realistic thing
     mᵉ = (Vᵐ + params.Cᵃ * (Vᵐ + Vᵖ)) * params.ρₒ + Vᵖ * (params.ρₒ - 500) 
 
-    u⃗ʷ = @inbounds interpolate.(values(water_velocities), x, y, z)
+    u⃗ʷ = @inbounds interpolate.([values(water_velocities)...], x, y, z)
     u⃗ᵣₑₗ = u⃗ʷ - u⃗ⁱ
     sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
 
-    a⃗ʷ = @inbounds interpolate.(values(water_accelerations), x, y, z)
-    a⃗ⁱ = @inbounds accelerations[p][n, :]
+    a⃗ʷ = @inbounds interpolate.([values(water_accelerations)...], x, y, z)
+    #a⃗ⁱ = @inbounds accelerations[p][n, :]
     #a⃗ᵣₑₗ = a⃗ʷ - a⃗ⁱ 
 
     θ = acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx⃗)) / (sᵣₑₗ * l + eps(0.0))))
