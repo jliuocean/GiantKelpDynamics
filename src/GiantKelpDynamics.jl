@@ -73,6 +73,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                       initial_blade_areas = 0.1 .* [i*20/number_nodes for i in 1:number_nodes],
                       initial_pneumatocyst_volume = 0.05 * ones(number_nodes),
                       initial_effective_radii = 0.5 * ones(number_nodes),
+                      initial_node_positions = nothing,
                       architecture = CPU(),
                       parameters = (k = 10 ^ 5, 
                                     α = 1.41, 
@@ -87,7 +88,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                     τ = 5.0,
                                     kᵈ = 500),
                       timestepper = RK3(),
-                      max_Δt = 0.5) where {FT}
+                      max_Δt = Inf) where {FT}
 
     base_x = arch_array(architecture, base_x)
     base_y = arch_array(architecture, base_y)
@@ -99,8 +100,18 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
     positions = []
     velocities = [arch_array(architecture, zeros(number_nodes, 3)) for p in 1:number_kelp]
 
-    for i in 1:number_kelp
-        push!(positions, arch_array(architecture, x⃗₀(number_nodes, depth, segment_unstretched_length, 2.5)))
+    if isnothing(initial_node_positions)
+        for i in 1:number_kelp
+            push!(positions, arch_array(architecture, x⃗₀(number_nodes, depth, segment_unstretched_length, 2.5)))
+        end
+    else
+        if !(size(initial_node_positions) == (number_nodes, 3))
+            error("initial_node_positions is the wrong shape (should be ($number_nodes, 3))")
+        end
+
+        for i in 1:number_kelp
+            push!(positions, arch_array(architecture, copy(initial_node_positions)))
+        end
     end
 
     VF = typeof(positions) # float vector array type
@@ -194,11 +205,11 @@ end
     Vᵐ = π * rˢ ^ 2 * l + Aᵇ * 0.01 # TODO: change thickness to some realistic thing
     mᵉ = (Vᵐ + params.Cᵃ * (Vᵐ + Vᵖ)) * params.ρₒ + Vᵖ * (params.ρₒ - 500) 
 
-    u⃗ʷ = @inbounds interpolate.([values(water_velocities)...], x, y, z)
+    u⃗ʷ = [ntuple(n -> interpolate(water_velocities[n], x, y, z), 3)...]
     u⃗ᵣₑₗ = u⃗ʷ - u⃗ⁱ
     sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
 
-    a⃗ʷ = @inbounds interpolate.([values(water_accelerations)...], x, y, z)
+    a⃗ʷ = [ntuple(n -> interpolate(water_accelerations[n], x, y, z), 3)...]
     #a⃗ⁱ = @inbounds accelerations[p][n, :]
     #a⃗ᵣₑₗ = a⃗ʷ - a⃗ⁱ 
 
@@ -316,13 +327,15 @@ end
 @inline function (transform::LocalTransform)(x, y, z)
     x⃗_ = @inbounds transform.R₁ * (transform.R₂ * ([x, y, z] - transform.x⃗₀))
 
-    if @inbounds x⃗_[3]>=0.0
+    if @inbounds x⃗_[3] >= 0.0
         x_, y_, z_ = transform.R₃⁺ * x⃗_
+        ± = true
     else
         x_, y_, z_ = transform.R₃⁻ * x⃗_
+        ± = false
     end
 
-    return x_, y_, z_
+    return x_, y_, z_, ±
 end
 
 
@@ -338,11 +351,18 @@ end
 @kernel function weights!(drag_field, grid, rᵉ, l⁺, l⁻, polar_transform, parameters)
     i, j, k = @index(Global, NTuple)
 
-    x, y, z = node(Center(), Center(), Center(), i, j, k, grid)
+    x, y, z = @inbounds node(Center(), Center(), Center(), i, j, k, grid)
 
-    x_, y_, z_ = polar_transform(x, y, z)
-    r = (x_ ^ 2 + y_ ^ 2) ^ 0.5
-    @inbounds drag_field[i, j, k] = ifelse((r < rᵉ) & (-l⁻ < z_ < l⁺), parameters.drag_smoothing(r, rᵉ), 0.0)
+    if @inbounds ((x - polar_transform.x⃗₀[1]) ^ 2 + (y - polar_transform.x⃗₀[2])^2 + (z - polar_transform.x⃗₀[3])^2) < (max(l⁺, l⁻) + rᵉ) ^ 2
+        x_, y_, z_, ± = polar_transform(x, y, z)
+        r = (x_ ^ 2 + y_ ^ 2) ^ 0.5
+        l = ifelse(±, l⁺, l⁻)
+        # who knows why z is signed wrong
+        weight = ifelse((r < rᵉ) & (- l < z_), parameters.drag_smoothing(r, rᵉ), 0.0)
+        @inbounds drag_field[i, j, k] = weight
+    else
+        @inbounds drag_field[i, j, k] = 0.0
+    end
 end
 
 @kernel function apply_drag!(water_accelerations, drag_field, normalisations, grid, Fᴰ, scalefactor, parameters)
@@ -375,17 +395,17 @@ end
     for n = 1:n_nodes
         # get node positions and size
         @inbounds begin
-            x⃗ = @inbounds positions[p][n, :] + [base_x[p], base_y[p], base_z[p]]
+            x⃗ = @inbounds positions[p][n, :] 
             if n==1
-                x⃗⁻ =  @inbounds [base_x[p], base_y[p], base_z[p]]
+                x⃗⁻ =  @inbounds zeros(3)
             else
-            x⃗⁻ = @inbounds positions[p][n - 1, :] + [base_x[p], base_y[p], base_z[p]]
+                x⃗⁻ = @inbounds positions[p][n - 1, :]
             end
 
             if n == n_nodes
                 x⃗⁺ = x⃗
             else
-                x⃗⁺ = @inbounds positions[p][n + 1, :] + [base_x[p], base_y[p], base_z[p]]
+                x⃗⁺ = @inbounds positions[p][n + 1, :]
             end
         end
 
@@ -394,7 +414,7 @@ end
         Δx⃗ = x⃗⁺ - x⃗⁻
                 
         if n == 1
-            l⁻ = @inbounds sqrt(dot(positions[p, n], positions[p, n]))
+            l⁻ = @inbounds sqrt(dot(positions[p][n, :], positions[p][n, :]))
         else
             dp = @inbounds positions[p][n, :] - positions[p][n - 1, :]
             l⁻ = sqrt(dot(dp, dp))/2
@@ -418,10 +438,12 @@ end
             θ⁺ = -1.0 <= cosθ⁺ <= 1.0 ? acos(cosθ⁺) : 0.0
         end
 
-        weights_event = @inbounds weights_kernel!(drag_field[p], grid, rᵉ, l⁺, l⁻, LocalTransform(θ, ϕ, θ⁺, θ⁻, x⃗), parameters)
+        @info "$θ, $ϕ, $θ⁺, $θ⁻, $(x⃗ + [base_x[p], base_y[p], base_z[p]])"
+        weights_event = @inbounds weights_kernel!(drag_field[p], grid, rᵉ, l⁺, l⁻, LocalTransform(θ, ϕ, θ⁺, θ⁻, x⃗ + [base_x[p], base_y[p], base_z[p]]), parameters)
         wait(weights_event)
 
-        normalisation = sum(@inbounds drag_field[p])
+        normalisation = @inbounds sum(drag_field[p])
+
         Fᴰ = @inbounds drag_forces[p][n, :]
 
         # fallback if nodes are closer together than gridpoints and the line joining them is parallel to a grid Axis
