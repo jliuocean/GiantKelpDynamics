@@ -36,7 +36,7 @@ model = NonhydrostaticModel(;grid, particles = kelp)
 
 set!(model, u=0.15)
 
-drag_water_callback = Callback(drag_water!; callsite = TendencyCallsite())
+drag_water_callback = Callback(fully_resolved_drag!; callsite = TendencyCallsite())
 
 simulation = Simulation(model, Δt=0.05, stop_iteration=1)
 

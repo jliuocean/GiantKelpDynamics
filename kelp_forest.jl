@@ -33,7 +33,7 @@ inv_density = 8
 for x in xnodes(Center, grid)[1:inv_density:end], y in ynodes(Center, grid)[1:inv_density:end]
     r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
     if r < forest_radius
-        scalefactor = 16 * 10 * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
+        scalefactor = inv_density * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
         push!(xs, x)
         push!(ys, y)
         push!(sf, scalefactor)
@@ -41,11 +41,31 @@ for x in xnodes(Center, grid)[1:inv_density:end], y in ynodes(Center, grid)[1:in
 end
 
 number_nodes = 4
-segment_unstretched_length = 1.2
+segment_unstretched_length = 1.0
 
-kelps = GiantKelp(;grid, number_nodes, segment_unstretched_length, base_x = xs, base_y = ys, base_z = -8.0 * ones(length(xs)), scalefactor = sf, initial_effective_radii = 0.5 * inv_density * ones(number_nodes), architecture = arch, max_Δt = Inf, timestepper = GiantKelpDynamics.Euler())
+kelps = GiantKelp(; grid, 
+                    number_nodes, 
+                    segment_unstretched_length, 
+                    base_x = xs, base_y = ys, base_z = -8.0 * ones(length(xs)), 
+                    scalefactor = sf, 
+                    architecture = arch, 
+                    max_Δt = 0.15,
+                    drag_fields = false,
+                    parameters = (k = 10 ^ 5, 
+                                  α = 1.41, 
+                                  ρₒ = 1026.0, 
+                                  ρₐ = 1.225, 
+                                  g = 9.81, 
+                                  Cᵈˢ = 1.0, 
+                                  Cᵈᵇ= 0.4 * 12 ^ -0.485, 
+                                  Cᵃ = 3.0,
+                                  n_nodes = number_nodes,
+                                  τ = 1.0,
+                                  kᵈ = 500))
 
 @inline tidal_forcing(x, y, z, t, params) = - params.Aᵤ * params.ω * sin(params.ω * (t - params.t_central) - params.ϕᵤ) - params.Aᵥ * params.ω * cos(params.ω * (t - params.t_central) - params.ϕᵥ)
+
+drag_u, drag_v, drag_w = DiscreteDrags(; particles = kelps)
 
 u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
@@ -55,7 +75,10 @@ model = NonhydrostaticModel(; grid,
                               advection = CenteredSecondOrder(),
                               timestepper = :RungeKutta3,
                               closure = AnisotropicMinimumDissipation(),
-                              forcing = (u = Forcing(tidal_forcing, parameters = (Aᵤ = 0.25, Aᵥ = 0.0, ϕᵤ = 0.0, ϕᵥ = 0.0, t_central = 0.0, ω = 6.76e-5)), ),
+                              forcing = (u = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.25, Aᵥ = 0.0, ϕᵤ = 0.0, ϕᵥ = 0.0, t_central = 0.0, ω = 6.76e-5)), 
+                                              drag_u),
+                                         v = drag_v,
+                                         w = drag_w),
                               boundary_conditions = (u = u_bcs, v = v_bcs, w = w_bcs),
                               particles = kelps)
 
@@ -66,16 +89,16 @@ set!(model, u = uᵢ)
 
 filepath = "forest"
 
-simulation = Simulation(model, Δt = 0.05, stop_time = 1year)
+simulation = Simulation(model, Δt = 10.0, stop_time = 1year)
 
 wizard = TimeStepWizard(cfl = 0.8, max_change = Inf, min_change = 0.0)
 simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
 
 progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, min(|u|) = %.1e ms⁻¹, wall time: %s\n",
-                                    iteration(sim), prettytime(sim), prettytime(sim.Δt),
-                                    maximum(abs, sim.model.velocities.u), minimum(abs, sim.model.velocities.u), prettytime(sim.run_wall_time))
+                                 iteration(sim), prettytime(sim), prettytime(sim.Δt),
+                                 maximum(abs, sim.model.velocities.u), minimum(abs, sim.model.velocities.u), prettytime(sim.run_wall_time))
     
-simulation.callbacks[:progress] = Callback(progress_message, IterationInterval(20))
+simulation.callbacks[:progress] = Callback(progress_message, TimeInterval(1minute))
 
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, merge(model.velocities, model.tracers),
@@ -90,8 +113,9 @@ function store_particles!(sim)
 end
 
 simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(1minute))
-simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
+
 simulation.stop_time = 3minutes
+
 run!(simulation)
 
 #=

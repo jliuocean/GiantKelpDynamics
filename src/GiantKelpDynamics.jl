@@ -553,7 +553,7 @@ end
     @unroll for p in 1:length(drag.particles)
         @inbounds for n in 1:drag.particles.parameters.n_nodes
             if [i, j, k] == drag.particles.properties.positions_ijk[p][n, :]
-                node_drag -= drag.particles.properties.drag_forces[p][n, drag.direction] / (Vᶜᶜᶜ(i, j, k, grid) * drag.particles.parameters.ρₒ)
+                node_drag -= drag.particles.properties.scalefactor[p] * drag.particles.properties.drag_forces[p][n, drag.direction] / (Vᶜᶜᶜ(i, j, k, grid) * drag.particles.parameters.ρₒ)
             end
         end
     end
