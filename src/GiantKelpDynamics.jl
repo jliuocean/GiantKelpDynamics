@@ -1,11 +1,11 @@
 module GiantKelpDynamics
 
-export GiantKelp, kelp_dynamics!, drag_water!
+export GiantKelp, kelp_dynamics!, fully_resolved_drag!, DiscreteDrag, DiscreteDrags
 
 using KernelAbstractions, LinearAlgebra, StructArrays
 using KernelAbstractions.Extras: @unroll
 using Oceananigans.Architectures: device, arch_array
-using Oceananigans.Fields: interpolate, fractional_x_index, fractional_y_index, fractional_z_index, fractional_indices
+using Oceananigans.Fields: _interpolate, fractional_indices
 using Oceananigans.Utils: work_layout
 using Oceananigans.Operators: Vᶜᶜᶜ
 using Oceananigans: CPU, node, Center, CenterField
@@ -13,24 +13,27 @@ using Oceananigans.LagrangianParticleTracking: AbstractParticle, LagrangianParti
 
 include("timesteppers.jl")
 
-function x⃗₀(number, depth, l₀, initial_stretch)
+x⃗₀(number, depth, l₀::Number, initial_stretch::Number) = x⃗₀(number, depth, repeat([l₀], number), repeat([initial_stretch], number))
+x⃗₀(number, depth, l₀::Array, initial_stretch::Number) = x⃗₀(number, depth, l₀, repeat([initial_stretch], number))
+x⃗₀(number, depth, l₀::Number, initial_stretch::Array) = x⃗₀(number, depth, repeat([l₀], number), initial_stretch)
+function x⃗₀(number, depth, l₀::Array, initial_stretch::Array)
     x = zeros(number, 3)
     for i in 1:number - 1
-        if l₀ * initial_stretch * i - depth < 0
-            x[i, 3] = l₀ * initial_stretch * i
+        if l₀[i] * initial_stretch[i] * i - depth < 0
+            x[i, 3] = l₀[i] * initial_stretch[i] * i
         else
-            x[i, :] = [l₀ * initial_stretch * i - depth, 0.0, depth]
+            x[i, :] = [l₀[i] * initial_stretch[i] * i - depth, 0.0, depth]
         end
     end
-    if l₀ * initial_stretch * (number - 1) + l₀ - depth < 0
-        x[number, 3] = l₀ * initial_stretch * (number - 1) + l₀
+    if l₀[number] * initial_stretch[number] * (number - 1) + l₀[number] - depth < 0
+        x[number, 3] = l₀[number] * initial_stretch[number] * (number - 1) + l₀[number]
     else
-        x[number, :] = [l₀ * initial_stretch * (number - 1) + l₀ - depth, 0.0, depth]
+        x[number, :] = [l₀[number] * initial_stretch[number] * (number - 1) + l₀[number] - depth, 0.0, depth]
     end
     return x
 end
 
-struct GiantKelp{FT, VF, SF, FA} <: AbstractParticle
+struct GiantKelp{FT, VF, VI, SF, VB, FA} <: AbstractParticle
     # origin position and velocity
     x :: FT
     y :: FT
@@ -44,6 +47,7 @@ struct GiantKelp{FT, VF, SF, FA} <: AbstractParticle
 
     #information about nodes
     positions :: VF
+    positions_ijk :: VI
     velocities :: VF 
     relaxed_lengths :: SF
     stipe_radii :: SF 
@@ -56,6 +60,9 @@ struct GiantKelp{FT, VF, SF, FA} <: AbstractParticle
     old_velocities :: VF
     old_accelerations :: VF
     drag_forces :: VF
+
+    # is the node on the surface? Needed for discrete stencil normalisation
+    surface :: VB
 
     drag_field :: FA # array of drag fields for each node
 end
@@ -74,6 +81,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                       initial_pneumatocyst_volume = 0.05 * ones(number_nodes),
                       initial_effective_radii = 0.5 * ones(number_nodes),
                       initial_node_positions = nothing,
+                      initial_stretch = 2.5,
                       architecture = CPU(),
                       parameters = (k = 10 ^ 5, 
                                     α = 1.41, 
@@ -88,6 +96,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                     τ = 5.0,
                                     kᵈ = 500),
                       timestepper = RK3(),
+                      drag_fields = true,
                       max_Δt = Inf) where {FT}
 
     base_x = arch_array(architecture, base_x)
@@ -96,13 +105,13 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
     scalefactor = arch_array(architecture, scalefactor)
 
     AFT = typeof(base_x)
-
+    
     positions = []
     velocities = [arch_array(architecture, zeros(number_nodes, 3)) for p in 1:number_kelp]
 
     if isnothing(initial_node_positions)
         for i in 1:number_kelp
-            push!(positions, arch_array(architecture, x⃗₀(number_nodes, depth, segment_unstretched_length, 2.5)))
+            push!(positions, arch_array(architecture, x⃗₀(number_nodes, depth, segment_unstretched_length, initial_stretch)))
         end
     else
         if !(size(initial_node_positions) == (number_nodes, 3))
@@ -115,6 +124,17 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
     end
 
     VF = typeof(positions) # float vector array type
+
+    positions_ijk = []
+    surface = []
+
+    for i in 1:number_kelp
+        push!(positions_ijk, arch_array(architecture, zeros(Int, number_nodes, 3)))
+        push!(surface, arch_array(architecture, zeros(Bool, number_nodes)))
+    end
+
+    VI = typeof(positions_ijk)
+    VB = typeof(surface)
 
     relaxed_lengths = [arch_array(architecture, segment_unstretched_length .* ones(number_nodes)) for p in 1:number_kelp]
     stipe_radii = [arch_array(architecture, ones(number_nodes) .* initial_stipe_radii) for p in 1:number_kelp]
@@ -129,25 +149,27 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
     old_accelerations = [arch_array(architecture, zeros(FT, number_nodes, 3)) for p in 1:number_kelp]
     drag_forces = [arch_array(architecture, zeros(FT, number_nodes, 3)) for p in 1:number_kelp]
 
-    drag_field = [CenterField(grid) for p in 1:number_kelp]
+    drag_field = drag_fields ? [CenterField(grid) for p in 1:number_kelp] : [nothing for p in 1:number_kelp]
 
     FA = typeof(drag_field)
 
-    kelps = StructArray{GiantKelp{AFT, VF, SF, FA}}((base_x, base_y, base_z, 
-                                                     copy(base_x), copy(base_y), copy(base_z), 
-                                                     scalefactor, 
-                                                     positions, 
-                                                     velocities, 
-                                                     relaxed_lengths,
-                                                     stipe_radii,
-                                                     blade_areas, 
-                                                     pneumatocyst_volumes, 
-                                                     effective_radii, 
-                                                     accelerations, 
-                                                     old_velocities, 
-                                                     old_accelerations, 
-                                                     drag_forces,
-                                                     drag_field))
+    kelps = StructArray{GiantKelp{AFT, VF, VI, SF, VB, FA}}((base_x, base_y, base_z, 
+                                                             copy(base_x), copy(base_y), copy(base_z), 
+                                                             scalefactor, 
+                                                             positions, 
+                                                             positions_ijk,
+                                                             velocities, 
+                                                             relaxed_lengths,
+                                                             stipe_radii,
+                                                             blade_areas, 
+                                                             pneumatocyst_volumes, 
+                                                             effective_radii, 
+                                                             accelerations, 
+                                                             old_velocities, 
+                                                             old_accelerations, 
+                                                             drag_forces,
+                                                             surface,
+                                                             drag_field))
 
     return LagrangianParticles(kelps; parameters = merge(parameters, (; timestepper, max_Δt)), dynamics = kelp_dynamics!)
 end
@@ -158,6 +180,7 @@ end
                             y_base, 
                             z_base, 
                             positions, 
+                            positions_ijk,
                             velocities, 
                             pneumatocyst_volumes, 
                             stipe_radii, 
@@ -205,11 +228,20 @@ end
     Vᵐ = π * rˢ ^ 2 * l + Aᵇ * 0.01 # TODO: change thickness to some realistic thing
     mᵉ = (Vᵐ + params.Cᵃ * (Vᵐ + Vᵖ)) * params.ρₒ + Vᵖ * (params.ρₒ - 500) 
 
-    u⃗ʷ = [ntuple(n -> interpolate(water_velocities[n], x, y, z), 3)...]
+    # we need ijk and this also reduces repetition of finding ijk
+    i, j, k = fractional_indices(x, y, z, (Center(), Center(), Center()), water_velocities.u.grid)
+    
+    ξ, i = modf(i)
+    η, j = modf(j)
+    ζ, k = modf(k)
+
+    @inbounds positions_ijk[p][n, :] = [i + 1, j + 1, k + 1]
+
+    u⃗ʷ = [ntuple(n -> _interpolate(water_velocities[n], ξ, η, ζ, Int(i+1), Int(j+1), Int(k+1)), 3)...]
     u⃗ᵣₑₗ = u⃗ʷ - u⃗ⁱ
     sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
 
-    a⃗ʷ = [ntuple(n -> interpolate(water_accelerations[n], x, y, z), 3)...]
+    a⃗ʷ = [ntuple(n -> _interpolate(water_accelerations[n], ξ, η, ζ, Int(i+1), Int(j+1), Int(k+1)), 3)...]
     #a⃗ⁱ = @inbounds accelerations[p][n, :]
     #a⃗ᵣₑₗ = a⃗ʷ - a⃗ⁱ 
 
@@ -286,7 +318,7 @@ function kelp_dynamics!(particles, model, Δt)
 
     step_kernel! = step_node!(device(model.architecture), workgroup, worksize)
 
-    n_substeps = max(1, floor(Int, Δt / particles.parameters.max_Δt))
+    n_substeps = max(1, floor(Int, Δt / (particles.parameters.max_Δt)))
 
     water_accelerations = @inbounds model.timestepper.Gⁿ[(:u, :v, :w)]
     for substep in 1:n_substeps        
@@ -295,6 +327,7 @@ function kelp_dynamics!(particles, model, Δt)
                                       particles.properties.y, 
                                       particles.properties.z, 
                                       particles.properties.positions, 
+                                      particles.properties.positions_ijk,
                                       particles.properties.velocities, 
                                       particles.properties.pneumatocyst_volumes, 
                                       particles.properties.stipe_radii,  
@@ -467,7 +500,7 @@ end
     end
 end
 
-function drag_water!(model)
+function fully_resolved_drag!(model)
     particles = model.particles
     water_accelerations = @inbounds model.timestepper.Gⁿ[(:u, :v, :w)]
 
@@ -493,6 +526,39 @@ function drag_water!(model)
                                           apply_drag_kernel!, 
                                           particles.parameters)
     wait(drag_nodes_event)
+end
+
+struct DiscreteDrag{PT, IT}
+    particles :: PT
+    direction :: IT
+
+    function DiscreteDrag(; particles::PT, direction) where {PT}
+        direction = (u = 1, v = 2, w = 3)[direction]
+
+        IT = typeof(direction)
+
+        return new{PT, IT}(particles, direction)
+    end
+end
+
+function DiscreteDrags(; particles::PT) where {PT}
+    drag_tuple = ntuple(n -> DiscreteDrag(;particles, direction = (:u, :v, :w)[n]), 3)
+
+    return NamedTuple{(:u, :v, :w)}(drag_tuple)
+end
+
+
+@inline function (drag::DiscreteDrag)(i, j, k, grid, clock, model_fields)
+    node_drag = 0.0
+    @unroll for p in 1:length(drag.particles)
+        @inbounds for n in 1:drag.particles.parameters.n_nodes
+            if [i, j, k] == drag.particles.properties.positions_ijk[p][n, :]
+                node_drag -= drag.particles.properties.drag_forces[p][n, drag.direction] / (Vᶜᶜᶜ(i, j, k, grid) * drag.particles.parameters.ρₒ)
+            end
+        end
+    end
+
+    return node_drag
 end
 
 end # module
