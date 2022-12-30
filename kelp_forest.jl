@@ -28,20 +28,23 @@ xs = Vector{FT}()
 ys = Vector{FT}()
 sf = Vector{FT}()
 
-inv_density = 8
+real_density = 0.5 # 1/m²
+grid_density = real_density * (Lx / Nx * Ly / Ny)
+node_density = 2
+base_scaling = node_density * grid_density
 
-for x in xnodes(Center, grid)[1:inv_density:end], y in ynodes(Center, grid)[1:inv_density:end]
+for x in xnodes(Center, grid)[1:node_density:end], y in ynodes(Center, grid)[1:node_density:end]
     r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
     if r < forest_radius
-        scalefactor = inv_density * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
+        scalefactor = base_scaling * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
         push!(xs, x)
         push!(ys, y)
         push!(sf, scalefactor)
     end
 end
 
-number_nodes = 4
-segment_unstretched_length = 1.0
+number_nodes = 3
+segment_unstretched_length = [3, .5, .5]
 
 kelps = GiantKelp(; grid, 
                     number_nodes, 
@@ -65,7 +68,32 @@ kelps = GiantKelp(; grid,
 
 @inline tidal_forcing(x, y, z, t, params) = - params.Aᵤ * params.ω * sin(params.ω * (t - params.t_central) - params.ϕᵤ) - params.Aᵥ * params.ω * cos(params.ω * (t - params.t_central) - params.ϕᵥ)
 
-drag_u, drag_v, drag_w = DiscreteDrags(; particles = kelps)
+drag_u, drag_v, drag_w = DiscreteDrags(; particles = kelps, xy_smudge_distance = floor(Int, (node_density/2) - 1))
+
+@inline mask(i, j, k, params) = ifelse((i - params.Nx/2)^2 + (j - params.Ny/2)^2 <= (params.extra + params.forest_radius * params.Nx / params.Lx) ^ 2, true, false)
+
+struct masked_drag{D, M, P}
+    drag :: D
+    mask :: M
+    parameters :: P
+end
+
+@inline function (dm::masked_drag)(i, j, k, grid, clock, model_fields)
+    if dm.mask(i, j, k, dm.parameters)
+        return dm.drag(i, j, k, grid, clock, model_fields)
+    else
+        return 0.0
+    end
+end
+
+extra = (node_density)
+parameters = (; Nx, Ny, Nz, Lx, Ly, Lz, forest_radius, extra)
+
+# I think this ω gives a period of 1 day but it should be 12 hours?
+u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.25, Aᵥ = 0.0, ϕᵤ = 0.0, ϕᵥ = 0.0, t_central = 6hours, ω = 6.76e-5)), 
+             masked_drag(drag_u, mask, parameters))
+v_forcing = masked_drag(drag_v, mask, parameters)
+w_forcing = masked_drag(drag_w, mask, parameters)
 
 u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
@@ -75,10 +103,7 @@ model = NonhydrostaticModel(; grid,
                               advection = CenteredSecondOrder(),
                               timestepper = :RungeKutta3,
                               closure = AnisotropicMinimumDissipation(),
-                              forcing = (u = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.25, Aᵥ = 0.0, ϕᵤ = 0.0, ϕᵥ = 0.0, t_central = 0.0, ω = 6.76e-5)), 
-                                              drag_u),
-                                         v = drag_v,
-                                         w = drag_w),
+                              forcing = (u = u_forcing, v = v_forcing, w = w_forcing),
                               boundary_conditions = (u = u_bcs, v = v_bcs, w = w_bcs),
                               particles = kelps)
 
@@ -89,9 +114,9 @@ set!(model, u = uᵢ)
 
 filepath = "forest"
 
-simulation = Simulation(model, Δt = 10.0, stop_time = 1year)
+simulation = Simulation(model, Δt = 0.5, stop_time = 1year)
 
-wizard = TimeStepWizard(cfl = 0.8, max_change = Inf, min_change = 0.0)
+wizard = TimeStepWizard(cfl = 0.8, max_change = 1.1, min_change = 0.8)
 simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
 
 progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, min(|u|) = %.1e ms⁻¹, wall time: %s\n",
@@ -114,7 +139,7 @@ end
 
 simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(1minute))
 
-simulation.stop_time = 3minutes
+simulation.stop_time = 10days
 
 run!(simulation)
 

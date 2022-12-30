@@ -87,9 +87,6 @@ simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(
 simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
 # transient response to the kelp starting to move 
-simulation.stop_time = 1
-simulation.Δt = 0.01
-run!(simulation)
 
 simulation.stop_time = 3minutes
 simulation.Δt = 0.1

@@ -10,6 +10,7 @@ using Oceananigans.Utils: work_layout
 using Oceananigans.Operators: Vᶜᶜᶜ
 using Oceananigans: CPU, node, Center, CenterField
 using Oceananigans.LagrangianParticleTracking: AbstractParticle, LagrangianParticles
+using Oceananigans.Grids: node
 
 include("timesteppers.jl")
 
@@ -528,32 +529,36 @@ function fully_resolved_drag!(model)
     wait(drag_nodes_event)
 end
 
-struct DiscreteDrag{PT, IT}
+struct DiscreteDrag{PT, IT, D}
     particles :: PT
     direction :: IT
+    xy_smudge_distance :: D
 
-    function DiscreteDrag(; particles::PT, direction) where {PT}
+    function DiscreteDrag(; particles::PT, direction, xy_smudge_distance::D = 0) where {PT, D}
         direction = (u = 1, v = 2, w = 3)[direction]
 
         IT = typeof(direction)
 
-        return new{PT, IT}(particles, direction)
+        return new{PT, IT, D}(particles, direction, xy_smudge_distance)
     end
 end
 
-function DiscreteDrags(; particles::PT) where {PT}
-    drag_tuple = ntuple(n -> DiscreteDrag(;particles, direction = (:u, :v, :w)[n]), 3)
-
+function DiscreteDrags(; particles::PT, xy_smudge_distance::D = 0) where {PT, D}
+    drag_tuple = ntuple(n -> DiscreteDrag(;particles, direction = (:u, :v, :w)[n], xy_smudge_distance), 3)
     return NamedTuple{(:u, :v, :w)}(drag_tuple)
 end
 
 
 @inline function (drag::DiscreteDrag)(i, j, k, grid, clock, model_fields)
     node_drag = 0.0
+    x, y, z = node(Center(), Center(), Center(), i, j, k, grid)
     @unroll for p in 1:length(drag.particles)
-        @inbounds for n in 1:drag.particles.parameters.n_nodes
-            if [i, j, k] == drag.particles.properties.positions_ijk[p][n, :]
-                node_drag -= drag.particles.properties.scalefactor[p] * drag.particles.properties.drag_forces[p][n, drag.direction] / (Vᶜᶜᶜ(i, j, k, grid) * drag.particles.parameters.ρₒ)
+        if (abs(drag.particles.properties.x[p] - x) < 20) && (abs(drag.particles.properties.y[p] - y) < 20)
+            @inbounds for n in 1:drag.particles.parameters.n_nodes
+                node_i, node_j, node_k = drag.particles.properties.positions_ijk[p][n, :]
+                if (i in (node_i - drag.xy_smudge_distance):(node_i + drag.xy_smudge_distance)) && (j in (node_j - drag.xy_smudge_distance):(node_j + drag.xy_smudge_distance)) && (k == node_k)
+                    node_drag -= drag.particles.properties.scalefactor[p] * drag.particles.properties.drag_forces[p][n, drag.direction] / ((drag.xy_smudge_distance + 1) ^ 2 * Vᶜᶜᶜ(i, j, k, grid) * drag.particles.parameters.ρₒ)
+                end
             end
         end
     end
