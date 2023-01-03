@@ -1,6 +1,6 @@
 module GiantKelpDynamics
 
-export GiantKelp, kelp_dynamics!, fully_resolved_drag!, DiscreteDrag, DiscreteDrags
+export GiantKelp, kelp_dynamics!, fully_resolved_drag!, DiscreteDrag, DiscreteDragSet
 
 using KernelAbstractions, LinearAlgebra, StructArrays
 using KernelAbstractions.Extras: @unroll
@@ -529,41 +529,53 @@ function fully_resolved_drag!(model)
     wait(drag_nodes_event)
 end
 
-struct DiscreteDrag{PT, IT, D}
-    particles :: PT
-    direction :: IT
-    xy_smudge_distance :: D
+struct DiscreteDrag{FT}
+    field :: FT
 
-    function DiscreteDrag(; particles::PT, direction, xy_smudge_distance::D = 0) where {PT, D}
-        direction = (u = 1, v = 2, w = 3)[direction]
+    function DiscreteDrag(; grid)
+        field = CenterField(grid)
+        FT = typeof(field)
 
-        IT = typeof(direction)
-
-        return new{PT, IT, D}(particles, direction, xy_smudge_distance)
+        return new{FT}(field)
     end
 end
 
-function DiscreteDrags(; particles::PT, xy_smudge_distance::D = 0) where {PT, D}
-    drag_tuple = ntuple(n -> DiscreteDrag(;particles, direction = (:u, :v, :w)[n], xy_smudge_distance), 3)
-    return NamedTuple{(:u, :v, :w)}(drag_tuple)
+struct DiscreteDragSet{DU, DV, DW, SD}
+    u :: DU
+    v :: DV
+    w :: DW
+
+    xy_smudge_distance :: SD
+
+    function DiscreteDragSet(; grid, xy_smudge_distance::SD = 0) where {SD}
+        drag_tuple = ntuple(n -> DiscreteDrag(; grid), 3)   
+        DU, DV, DW = typeof.(drag_tuple)
+        return new{DU, DV, DW, SD}(drag_tuple..., xy_smudge_distance)
+    end
 end
 
 
-@inline function (drag::DiscreteDrag)(i, j, k, grid, clock, model_fields)
-    node_drag = 0.0
-    x, y, z = node(Center(), Center(), Center(), i, j, k, grid)
-    @unroll for p in 1:length(drag.particles)
-        if (abs(drag.particles.properties.x[p] - x) < 20) && (abs(drag.particles.properties.y[p] - y) < 20)
-            @inbounds for n in 1:drag.particles.parameters.n_nodes
-                node_i, node_j, node_k = drag.particles.properties.positions_ijk[p][n, :]
-                if (i in (node_i - drag.xy_smudge_distance):(node_i + drag.xy_smudge_distance)) && (j in (node_j - drag.xy_smudge_distance):(node_j + drag.xy_smudge_distance)) && (k == node_k)
-                    node_drag -= drag.particles.properties.scalefactor[p] * drag.particles.properties.drag_forces[p][n, drag.direction] / ((drag.xy_smudge_distance + 1) ^ 2 * Vᶜᶜᶜ(i, j, k, grid) * drag.particles.parameters.ρₒ)
-                end
-            end
+@inline (drag::DiscreteDrag)(i, j, k, grid, clock, model_fields) = @inbounds drag.field[i, j, k]
+
+@inline function (drag_set::DiscreteDragSet)(model)
+    drag_set.u.field .= 0.0
+    drag_set.v.field .= 0.0
+    drag_set.w.field .= 0.0
+
+    properties = model.particles.properties
+    parameters = model.particles.parameters
+
+    @inbounds @unroll for p in 1:length(model.particles)
+        sf = properties.scalefactor[p]
+        for n in 1:parameters.n_nodes
+            i, j, k = properties.positions_ijk[p][n, :]
+            vol = Vᶜᶜᶜ(i, j, k, model.grid)
+            total_scaling = sf / ((drag_set.xy_smudge_distance + 1) ^ 2 * vol * parameters.ρₒ)
+
+            drag_set.u.field[i, j, k] -= properties.drag_forces[p][n, 1] * total_scaling
+            drag_set.v.field[i, j, k] -= properties.drag_forces[p][n, 2] * total_scaling
+            drag_set.w.field[i, j, k] -= properties.drag_forces[p][n, 3] * total_scaling
         end
     end
-
-    return node_drag
 end
-
 end # module

@@ -68,32 +68,13 @@ kelps = GiantKelp(; grid,
 
 @inline tidal_forcing(x, y, z, t, params) = - params.Aᵤ * params.ω * sin(params.ω * (t - params.t_central) - params.ϕᵤ) - params.Aᵥ * params.ω * cos(params.ω * (t - params.t_central) - params.ϕᵥ)
 
-drag_u, drag_v, drag_w = DiscreteDrags(; particles = kelps, xy_smudge_distance = floor(Int, (node_density/2) - 1))
-
-@inline mask(i, j, k, params) = ifelse((i - params.Nx/2)^2 + (j - params.Ny/2)^2 <= (params.extra + params.forest_radius * params.Nx / params.Lx) ^ 2, true, false)
-
-struct masked_drag{D, M, P}
-    drag :: D
-    mask :: M
-    parameters :: P
-end
-
-@inline function (dm::masked_drag)(i, j, k, grid, clock, model_fields)
-    if dm.mask(i, j, k, dm.parameters)
-        return dm.drag(i, j, k, grid, clock, model_fields)
-    else
-        return 0.0
-    end
-end
-
-extra = (node_density)
-parameters = (; Nx, Ny, Nz, Lx, Ly, Lz, forest_radius, extra)
+drag_set = DiscreteDragSet(; grid, xy_smudge_distance = floor(Int, (node_density/2) - 1))
 
 # I think this ω gives a period of 1 day but it should be 12 hours?
 u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.25, Aᵥ = 0.0, ϕᵤ = 0.0, ϕᵥ = 0.0, t_central = 6hours, ω = 6.76e-5)), 
-             masked_drag(drag_u, mask, parameters))
-v_forcing = masked_drag(drag_v, mask, parameters)
-w_forcing = masked_drag(drag_w, mask, parameters)
+             drag_set.u)
+v_forcing = drag_set.v
+w_forcing = drag_set.w
 
 u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
@@ -105,16 +86,19 @@ model = NonhydrostaticModel(; grid,
                               closure = AnisotropicMinimumDissipation(),
                               forcing = (u = u_forcing, v = v_forcing, w = w_forcing),
                               boundary_conditions = (u = u_bcs, v = v_bcs, w = w_bcs),
+                              coriolis = FPlane(; latitude = 34.5),
                               particles = kelps)
 
-uᵢ(x, y, z) = 0.25 * cos(6.76e-5 * 0.0) * (1 + 0.01*(rand() - 1))
+uᵢ(x, y, z) = 0.25 * cos(6.76e-5 * (0.0 - 6hours)) * (1 + 0.01*(rand() - 1))
 #vᵢ(x, y, z) = 4.68e-2 * cos(- 6.76e-5 * 1.58e7 - 3.80)
 
 set!(model, u = uᵢ)
 
-filepath = "forest"
+filepath = "forest_newer"
 
 simulation = Simulation(model, Δt = 0.5, stop_time = 1year)
+
+simulation.callbacks[:update_drag_fields] = Callback(drag_set; callsite = TendencyCallsite())
 
 wizard = TimeStepWizard(cfl = 0.8, max_change = 1.1, min_change = 0.8)
 simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
