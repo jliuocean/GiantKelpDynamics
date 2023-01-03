@@ -30,7 +30,7 @@ sf = Vector{FT}()
 
 real_density = 0.5 # 1/m²
 grid_density = real_density * (Lx / Nx * Ly / Ny)
-node_density = 2
+node_density = 1
 base_scaling = node_density * grid_density
 
 for x in xnodes(Center, grid)[1:node_density:end], y in ynodes(Center, grid)[1:node_density:end]
@@ -52,7 +52,7 @@ kelps = GiantKelp(; grid,
                     base_x = xs, base_y = ys, base_z = -8.0 * ones(length(xs)), 
                     scalefactor = sf, 
                     architecture = arch, 
-                    max_Δt = 0.15,
+                    max_Δt = 0.15, # TODO: experiment with this now I know where weird transient comes from
                     drag_fields = false,
                     parameters = (k = 10 ^ 5, 
                                   α = 1.41, 
@@ -68,10 +68,10 @@ kelps = GiantKelp(; grid,
 
 @inline tidal_forcing(x, y, z, t, params) = - params.Aᵤ * params.ω * sin(params.ω * (t - params.t_central) - params.ϕᵤ) - params.Aᵥ * params.ω * cos(params.ω * (t - params.t_central) - params.ϕᵥ)
 
-drag_set = DiscreteDragSet(; grid, xy_smudge_distance = floor(Int, (node_density/2) - 1))
+drag_set = DiscreteDragSet(; grid, xy_smudge_distance = max(1, floor(Int, (node_density/2) - 1)))
 
 # I think this ω gives a period of 1 day but it should be 12 hours?
-u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.25, Aᵥ = 0.0, ϕᵤ = 0.0, ϕᵥ = 0.0, t_central = 6hours, ω = 6.76e-5)), 
+u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.25, Aᵥ = 0.0, ϕᵤ = -π/2, ϕᵥ = 0.0, t_central = 6hours, ω = 1.41e-4)), 
              drag_set.u)
 v_forcing = drag_set.v
 w_forcing = drag_set.w
@@ -89,14 +89,18 @@ model = NonhydrostaticModel(; grid,
                               coriolis = FPlane(; latitude = 34.5),
                               particles = kelps)
 
-uᵢ(x, y, z) = 0.25 * cos(6.76e-5 * (0.0 - 6hours)) * (1 + 0.01*(rand() - 1))
+uᵢ(x, y, z) = 0.25 * cos(u_forcing[1].parameters.ω * 0.0 - u_forcing[1].parameters.ϕᵤ) + 0.25 * 0.01 * (rand() - 0.5)
 #vᵢ(x, y, z) = 4.68e-2 * cos(- 6.76e-5 * 1.58e7 - 3.80)
 
 set!(model, u = uᵢ)
 
-filepath = "forest_newer"
+Δt₀ = 0.5
+# initialise kelp positions_ijk
+kelp_dynamics!(kelps, model, Δt₀)
 
-simulation = Simulation(model, Δt = 0.5, stop_time = 1year)
+filepath = "forest_vertical_smooshing"
+
+simulation = Simulation(model, Δt = Δt₀, stop_time = 1year)
 
 simulation.callbacks[:update_drag_fields] = Callback(drag_set; callsite = TendencyCallsite())
 

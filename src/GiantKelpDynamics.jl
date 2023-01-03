@@ -19,17 +19,12 @@ x⃗₀(number, depth, l₀::Array, initial_stretch::Number) = x⃗₀(number, d
 x⃗₀(number, depth, l₀::Number, initial_stretch::Array) = x⃗₀(number, depth, repeat([l₀], number), initial_stretch)
 function x⃗₀(number, depth, l₀::Array, initial_stretch::Array)
     x = zeros(number, 3)
-    for i in 1:number - 1
-        if l₀[i] * initial_stretch[i] * i - depth < 0
-            x[i, 3] = l₀[i] * initial_stretch[i] * i
+    for i in 1:number
+        if sum(l₀[1:i]) * initial_stretch[i] - depth < 0
+            x[i, 3] = sum(l₀[1:i] .* initial_stretch[1:i])
         else
-            x[i, :] = [l₀[i] * initial_stretch[i] * i - depth, 0.0, depth]
+            x[i, :] = [sum(l₀[1:i] .* initial_stretch[1:i]) - depth, 0.0, depth]
         end
-    end
-    if l₀[number] * initial_stretch[number] * (number - 1) + l₀[number] - depth < 0
-        x[number, 3] = l₀[number] * initial_stretch[number] * (number - 1) + l₀[number]
-    else
-        x[number, :] = [l₀[number] * initial_stretch[number] * (number - 1) + l₀[number] - depth, 0.0, depth]
     end
     return x
 end
@@ -82,7 +77,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                       initial_pneumatocyst_volume = 0.05 * ones(number_nodes),
                       initial_effective_radii = 0.5 * ones(number_nodes),
                       initial_node_positions = nothing,
-                      initial_stretch = 2.5,
+                      initial_stretch = 2.0,
                       architecture = CPU(),
                       parameters = (k = 10 ^ 5, 
                                     α = 1.41, 
@@ -567,14 +562,19 @@ end
 
     @inbounds @unroll for p in 1:length(model.particles)
         sf = properties.scalefactor[p]
-        for n in 1:parameters.n_nodes
+        k_base = 1
+        for n in parameters.n_nodes:-1:1
             i, j, k = properties.positions_ijk[p][n, :]
-            vol = Vᶜᶜᶜ(i, j, k, model.grid)
-            total_scaling = sf / ((drag_set.xy_smudge_distance + 1) ^ 2 * vol * parameters.ρₒ)
+            vertical_spread = max(1, k - k_base  + 1)
 
-            drag_set.u.field[i, j, k] -= properties.drag_forces[p][n, 1] * total_scaling
-            drag_set.v.field[i, j, k] -= properties.drag_forces[p][n, 2] * total_scaling
-            drag_set.w.field[i, j, k] -= properties.drag_forces[p][n, 3] * total_scaling
+            vol = sum(ntuple(n -> Vᶜᶜᶜ(i, j, k + n - 1, model.grid), vertical_spread))
+            total_scaling = sf / ((drag_set.xy_smudge_distance + 1) ^ 2 * vol * parameters.ρₒ * vertical_spread)
+
+            drag_set.u.field[i, j, k_base:k] = drag_set.u.field[i, j, k_base:k] .- properties.drag_forces[p][n, 1] * total_scaling
+            drag_set.v.field[i, j, k_base:k] = drag_set.v.field[i, j, k_base:k] .- properties.drag_forces[p][n, 2] * total_scaling
+            drag_set.w.field[i, j, k_base:k] = drag_set.w.field[i, j, k_base:k] .- properties.drag_forces[p][n, 3] * total_scaling
+
+            k_base = k
         end
     end
 end
