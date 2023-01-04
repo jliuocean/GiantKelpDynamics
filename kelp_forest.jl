@@ -52,7 +52,7 @@ kelps = GiantKelp(; grid,
                     base_x = xs, base_y = ys, base_z = -8.0 * ones(length(xs)), 
                     scalefactor = sf, 
                     architecture = arch, 
-                    max_Δt = 0.15, # TODO: experiment with this now I know where weird transient comes from
+                    max_Δt = 0.4,
                     drag_fields = false,
                     parameters = (k = 10 ^ 5, 
                                   α = 1.41, 
@@ -111,12 +111,12 @@ progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = 
                                  iteration(sim), prettytime(sim), prettytime(sim.Δt),
                                  maximum(abs, sim.model.velocities.u), minimum(abs, sim.model.velocities.u), prettytime(sim.run_wall_time))
     
-simulation.callbacks[:progress] = Callback(progress_message, TimeInterval(1minute))
+simulation.callbacks[:progress] = Callback(progress_message, TimeInterval(5minute))
 
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, merge(model.velocities, model.tracers),
                          filename = "$filepath.jld2",
-                         schedule = TimeInterval(1minute),
+                         schedule = TimeInterval(5minute),
                          overwrite_existing = true)
 
 function store_particles!(sim)
@@ -125,7 +125,7 @@ function store_particles!(sim)
     end
 end
 
-simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(1minute))
+simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(5minute))
 
 simulation.stop_time = 10days
 

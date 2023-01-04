@@ -563,7 +563,7 @@ end
     @inbounds @unroll for p in 1:length(model.particles)
         sf = properties.scalefactor[p]
         k_base = 1
-        for n in parameters.n_nodes:-1:1
+        for n in 1:parameters.n_nodes
             i, j, k = properties.positions_ijk[p][n, :]
             vertical_spread = max(1, k - k_base  + 1)
 
