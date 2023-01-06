@@ -43,13 +43,14 @@ for x in xnodes(Center, grid)[1:node_density:end], y in ynodes(Center, grid)[1:n
     end
 end
 
-number_nodes = 3
-segment_unstretched_length = [3, .5, .5]
+number_nodes = 2
+segment_unstretched_length = [5.0, 3.0]
 
 kelps = GiantKelp(; grid, 
                     number_nodes, 
                     segment_unstretched_length, 
                     base_x = xs, base_y = ys, base_z = -8.0 * ones(length(xs)), 
+                    initial_blade_areas = [0.1 * 10, 0.1 * 20],
                     scalefactor = sf, 
                     architecture = arch, 
                     max_Δt = 0.4,
@@ -81,7 +82,7 @@ v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
 #Aᵤ = 7.00e-2, Aᵥ = 4.68e-2, ϕᵤ = 1.038, ϕᵥ = 3.80, t_central = 1.58e7, ω = 6.76e-5
 model = NonhydrostaticModel(; grid,
-                              advection = CenteredSecondOrder(),
+                              advection = UpwindBiased(),
                               timestepper = :RungeKutta3,
                               closure = AnisotropicMinimumDissipation(),
                               forcing = (u = u_forcing, v = v_forcing, w = w_forcing),
@@ -98,7 +99,7 @@ set!(model, u = uᵢ)
 # initialise kelp positions_ijk
 kelp_dynamics!(kelps, model, Δt₀)
 
-filepath = "forest_vertical_smooshing"
+filepath = "forest_more_drag"
 
 simulation = Simulation(model, Δt = Δt₀, stop_time = 1year)
 
@@ -127,9 +128,11 @@ end
 
 simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(5minute))
 
+simulation.output_writers[:checkpointer] = Checkpointer(model, schedule = TimeInterval(1hour), overwrite_existing = true)
+
 simulation.stop_time = 10days
 
-run!(simulation)
+run!(simulation, pickup = false)
 
 #=
 file = jldopen("$(filepath)_particles.jld2")
