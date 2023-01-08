@@ -540,7 +540,7 @@ struct DiscreteDragSet{DU, DV, DW, SD}
     v :: DV
     w :: DW
 
-    xy_smudge_distance :: SD
+    xy_smudge_distance :: SD # not using at the moment but might add back in
 
     function DiscreteDragSet(; grid, xy_smudge_distance::SD = 0) where {SD}
         drag_tuple = ntuple(n -> DiscreteDrag(; grid), 3)   
@@ -568,7 +568,7 @@ end
             vertical_spread = max(1, k - k_base  + 1)
 
             vol = sum(ntuple(n -> Vᶜᶜᶜ(i, j, k + n - 1, model.grid), vertical_spread))
-            total_scaling = sf / ((drag_set.xy_smudge_distance + 1) ^ 2 * vol * parameters.ρₒ * vertical_spread)
+            total_scaling = sf / (vertical_spread * vol * parameters.ρₒ * vertical_spread)
 
             drag_set.u.field[i, j, k_base:k] = drag_set.u.field[i, j, k_base:k] .- properties.drag_forces[p][n, 1] * total_scaling
             drag_set.v.field[i, j, k_base:k] = drag_set.v.field[i, j, k_base:k] .- properties.drag_forces[p][n, 2] * total_scaling
