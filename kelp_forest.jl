@@ -17,7 +17,10 @@ end
 # ## Setup grid 
 Lx, Ly, Lz = 1kilometers, 1kilometers, 8
 Nx, Ny, Nz = 256, 256, 8
-grid = RectilinearGrid(arch, FT; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
+grid = RectilinearGrid(arch, FT;
+                       size=(Nx, Ny, Nz), 
+                       extent=(Lx, Ly, Lz),
+                       topology=(Periodic, Bounded, Bounded))
 
 # ## Setup kelp particles
 
@@ -44,7 +47,7 @@ for x in xnodes(Center, grid)[1:node_density:end], y in ynodes(Center, grid)[1:n
 end
 
 number_nodes = 2
-segment_unstretched_length = [5.0, 3.0]
+segment_unstretched_length = [5.0, 4.0]
 
 kelps = GiantKelp(; grid, 
                     number_nodes, 
@@ -69,17 +72,23 @@ kelps = GiantKelp(; grid,
 
 @inline tidal_forcing(x, y, z, t, params) = - params.Aᵤ * params.ω * sin(params.ω * (t - params.t_central) - params.ϕᵤ) - params.Aᵥ * params.ω * cos(params.ω * (t - params.t_central) - params.ϕᵥ)
 
-drag_set = DiscreteDragSet(; grid, xy_smudge_distance = max(1, floor(Int, (node_density/2) - 1)))
+drag_set = DiscreteDragSet(; grid)
 
 # I think this ω gives a period of 1 day but it should be 12 hours?
-u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.25, Aᵥ = 0.0, ϕᵤ = -π/2, ϕᵥ = 0.0, t_central = 6hours, ω = 1.41e-4)), 
+u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.15, Aᵥ = 0.05, ϕᵤ = -π/2, ϕᵥ = -π/2, t_central = 0, ω = 1.41e-4)), 
              drag_set.u)
 v_forcing = drag_set.v
 w_forcing = drag_set.w
-
+#=
 u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
+=#
+
+u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0), north = ValueBoundaryCondition(0.0))
+v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0), north = OpenBoundaryCondition(0.0))
+w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0), north = ValueBoundaryCondition(0.0))
+
 #Aᵤ = 7.00e-2, Aᵥ = 4.68e-2, ϕᵤ = 1.038, ϕᵥ = 3.80, t_central = 1.58e7, ω = 6.76e-5
 model = NonhydrostaticModel(; grid,
                               advection = UpwindBiased(),
@@ -99,7 +108,7 @@ set!(model, u = uᵢ)
 # initialise kelp positions_ijk
 kelp_dynamics!(kelps, model, Δt₀)
 
-filepath = "forest_more_drag"
+filepath = "forest_small_v"
 
 simulation = Simulation(model, Δt = Δt₀, stop_time = 1year)
 
@@ -229,3 +238,51 @@ GLMakie.record(fig, "$(filepath)_3d_plot.mp4", frame_iterator; framerate = frame
     ax.title = "t=$(prettytime(parse(FT, times[i])))"
 end
 =#
+
+using EasyFit
+
+u₁ = u[76, 128, Nz, :]
+u₃ = u[110, 128, Nz, :]
+
+u₁_pos = u₁[u₁ .>= 0]
+u₁_neg = u₁[u₁ .< 0]
+
+u₃_pos = u₃[u₁ .>= 0]
+u₃_neg = u₃[u₁ .< 0]
+
+u₁³_pos = fitlinear(u₁_pos, u₃_pos)
+u₁³_neg = fitlinear(u₁_neg, u₃_neg)
+
+fig = Figure(resolution = (1600, 1600))
+ax = Axis(fig[1, 1])
+
+scatter!(ax, u₁, u₃)
+lines!(ax, [-.3, .3], [-.3, .3], color=:black, linestyle=:dot)
+lines!(ax, u₁³_pos.x, u₁³_pos.y, color=:black, label = "$(u₁³_pos.b) + $(u₁³_pos.a) x, r² = $(u₁³_pos.R^2)")
+lines!(ax, u₁³_neg.x, u₁³_neg.y, color=:black, label = "$(u₁³_neg.b) + $(u₁³_neg.a) x, r² = $(u₁³_neg.R^2)")
+axislegend(ax, position = :lt)
+
+save("$(filepath)_west.png", fig)
+
+u₁₃ = u[180, 128, Nz, :]
+u₁₁ = u[148, 128, Nz, :]
+
+u₁₃_pos = u₁₃[u₁₃ .>= 0]
+u₁₃_neg = u₁₃[u₁₃ .< 0]
+
+u₁₁_pos = u₁₁[u₁₃ .>= 0]
+u₁₁_neg = u₁₁[u₁₃ .< 0]
+
+u₁₃¹¹_pos = fitlinear(u₁₃_pos, u₁₁_pos)
+u₁₃¹¹_neg = fitlinear(u₁₃_neg, u₁₁_neg)
+
+fig = Figure(resolution = (1600, 1600))
+ax = Axis(fig[1, 1])
+
+scatter!(ax, u₁₃, u₁₁)
+lines!(ax, [-.3, .3], [-.3, .3], color=:black, linestyle=:dot)
+lines!(ax, u₁₃¹¹_pos.x, u₁₃¹¹_pos.y, color=:black, label = "$(u₁₃¹¹_pos.b) + $(u₁₃¹¹_pos.a) x, r² = $(u₁₃¹¹_pos.R^2)")
+lines!(ax, u₁₃¹¹_neg.x, u₁₃¹¹_neg.y, color=:black, label = "$(u₁₃¹¹_neg.b) + $(u₁₃¹¹_neg.a) x, r² = $(u₁₃¹¹_neg.R^2)")
+axislegend(ax, position = :lt)
+
+save("$(filepath)_east.png", fig)
