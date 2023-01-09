@@ -19,6 +19,7 @@ include("timesteppers.jl")
 x⃗₀(number, depth, l₀::Number, initial_stretch::Number) = x⃗₀(number, depth, repeat([l₀], number), repeat([initial_stretch], number))
 x⃗₀(number, depth, l₀::Array, initial_stretch::Number) = x⃗₀(number, depth, l₀, repeat([initial_stretch], number))
 x⃗₀(number, depth, l₀::Number, initial_stretch::Array) = x⃗₀(number, depth, repeat([l₀], number), initial_stretch)
+
 function x⃗₀(number, depth, l₀::Array, initial_stretch::Array)
     x = zeros(number, 3)
     for i in 1:number
@@ -195,22 +196,22 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
 
     FA = typeof(drag_field)
 
-    kelps = StructArray{GiantKelp{AFT, VF, VI, SF, VB, FA}}((base_x, base_y, base_z, 
-                                                             copy(base_x), copy(base_y), copy(base_z), 
-                                                             scalefactor, 
-                                                             positions, 
-                                                             positions_ijk,
-                                                             velocities, 
-                                                             relaxed_lengths,
-                                                             stipe_radii,
-                                                             blade_areas, 
-                                                             pneumatocyst_volumes, 
-                                                             effective_radii, 
-                                                             accelerations, 
-                                                             old_velocities, 
-                                                             old_accelerations, 
-                                                             drag_forces,
-                                                             drag_field))
+    kelps = StructArray{GiantKelp{AFT, VF, VI, SF, FA}}((base_x, base_y, base_z, 
+                                                         copy(base_x), copy(base_y), copy(base_z), 
+                                                         scalefactor, 
+                                                         positions, 
+                                                         positions_ijk,
+                                                         velocities, 
+                                                         relaxed_lengths,
+                                                         stipe_radii,
+                                                         blade_areas, 
+                                                         pneumatocyst_volumes, 
+                                                         effective_radii, 
+                                                         accelerations, 
+                                                         old_velocities, 
+                                                         old_accelerations, 
+                                                         drag_forces,
+                                                         drag_field))
 
     return LagrangianParticles(kelps; parameters = merge(parameters, (; timestepper, max_Δt)), dynamics = kelp_dynamics!)
 end
