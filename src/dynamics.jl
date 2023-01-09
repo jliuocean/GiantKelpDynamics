@@ -113,8 +113,6 @@
     @inbounds begin 
         accelerations[p][n, :] .= (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ - velocities[p][n, :] ./ params.τ
         drag_forces[p][n, :] .= Fᴰ + Fⁱ # store for back reaction onto water
-        
-        if any(isnan.(accelerations[p][n, :])) error("F is NaN: i=$i $(Fᴮ) .+ $(Fᴰ) .+ $(T⁻) .+ $(T⁺) at $x, $y, $z") end
 
         old_velocities[p][n, :] .= velocities[p][n, :]
         

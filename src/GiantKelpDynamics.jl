@@ -78,6 +78,7 @@ struct GiantKelp{FT, VF, VI, SF, FA} <: AbstractParticle
                        old_accelerations::VF,
                        drag_forces::VF,
                        drag_field::FA) where {FT, VF, VI, SF, FA}
+
         return new{FT, VF, VI, SF, FA}(x, y, z, fixed_x, fixed_y, fixed_z,
                                        scalefactor,
                                        positions,
@@ -152,8 +153,8 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
 
     AFT = typeof(base_x)
     
-    positions = []
     velocities = [arch_array(architecture, zeros(number_nodes, 3)) for p in 1:number_kelp]
+    positions = Vector{typeof(velocities[1])}()
 
     if isnothing(initial_node_positions)
         for i in 1:number_kelp
@@ -171,7 +172,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
 
     VF = typeof(positions) # float vector array type
 
-    positions_ijk = []
+    positions_ijk = Vector{typeof(arch_array(architecture, zeros(Int, number_nodes, 3)))}()
 
     for i in 1:number_kelp
         push!(positions_ijk, arch_array(architecture, zeros(Int, number_nodes, 3)))
