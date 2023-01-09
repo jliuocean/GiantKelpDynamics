@@ -12,6 +12,8 @@ using Oceananigans: CPU, node, Center, CenterField
 using Oceananigans.LagrangianParticleTracking: AbstractParticle, LagrangianParticles
 using Oceananigans.Grids: node
 
+import Adapt: adapt_structure
+
 include("timesteppers.jl")
 
 x⃗₀(number, depth, l₀::Number, initial_stretch::Number) = x⃗₀(number, depth, repeat([l₀], number), repeat([initial_stretch], number))
@@ -29,7 +31,7 @@ function x⃗₀(number, depth, l₀::Array, initial_stretch::Array)
     return x
 end
 
-struct GiantKelp{FT, VF, VI, SF, VB, FA} <: AbstractParticle
+struct GiantKelp{FT, VF, VI, SF, FA} <: AbstractParticle
     # origin position and velocity
     x :: FT
     y :: FT
@@ -57,11 +59,58 @@ struct GiantKelp{FT, VF, VI, SF, VB, FA} <: AbstractParticle
     old_accelerations :: VF
     drag_forces :: VF
 
-    # is the node on the surface? Needed for discrete stencil normalisation
-    surface :: VB
-
     drag_field :: FA # array of drag fields for each node
+
+    function GiantKelp(x::FT, y::FT, z::FT,
+                       fixed_x::FT, fixed_y::FT, fixed_z::FT,
+                       scalefactor::FT,
+                       positions::VF,
+                       positions_ijk::VI,
+                       velocities::VF,
+                       relaxed_lengths::SF,
+                       stipe_radii::SF,
+                       blade_areas::SF,
+                       pneumatocyst_volumes::SF,
+                       effective_radii::SF,
+                       accelerations::VF,
+                       old_velocities::VF,
+                       old_accelerations::VF,
+                       drag_forces::VF,
+                       drag_field::FA) where {FT, VF, VI, SF, FA}
+        return new{FT, VF, VI, SF, FA}(x, y, z, fixed_x, fixed_y, fixed_z,
+                                       scalefactor,
+                                       positions,
+                                       positions_ijk,
+                                       velocities,
+                                       relaxed_lengths,
+                                       stipe_radii,
+                                       blade_areas,
+                                       pneumatocyst_volumes,
+                                       effective_radii,
+                                       accelerations,
+                                       old_velocities,
+                                       old_accelerations,
+                                       drag_forces,
+                                       drag_field)
+    end
 end
+
+adapt_structure(to, kelp::GiantKelp) = GiantKelp(kelp.x, kelp.y, kelp.z,
+                                                 kelp.fixed_x, kelp.fixed_y, kelp.fixed_z,
+                                                 kelp.scalefactor,
+                                                 adapt_structure(to, kelp.positions),
+                                                 adapt_structure(to, kelp.positions_ijk),
+                                                 adapt_structure(to, kelp.velocities),
+                                                 adapt_structure(to, kelp.relaxed_lengths),
+                                                 adapt_structure(to, kelp.stipe_radii),
+                                                 adapt_structure(to, kelp.blade_areas),
+                                                 adapt_structure(to, kelp.pneumatocyst_volumes),
+                                                 adapt_structure(to, kelp.effective_radii),
+                                                 adapt_structure(to, kelp.accelerations),
+                                                 adapt_structure(to, kelp.old_velocities),
+                                                 adapt_structure(to, kelp.old_accelerations),
+                                                 adapt_structure(to, kelp.drag_forces),
+                                                 adapt_structure(to, kelp.drag_field))
 
 @inline guassian_smoothing(r, rᵉ) = exp(-(r) ^ 2 / (2 * rᵉ ^ 2))/sqrt(2 * π * rᵉ ^ 2)
 @inline no_smoothing(r, rᵉ) = 1.0
@@ -122,15 +171,12 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
     VF = typeof(positions) # float vector array type
 
     positions_ijk = []
-    surface = []
 
     for i in 1:number_kelp
         push!(positions_ijk, arch_array(architecture, zeros(Int, number_nodes, 3)))
-        push!(surface, arch_array(architecture, zeros(Bool, number_nodes)))
     end
 
     VI = typeof(positions_ijk)
-    VB = typeof(surface)
 
     relaxed_lengths = [arch_array(architecture, segment_unstretched_length .* ones(number_nodes)) for p in 1:number_kelp]
     stipe_radii = [arch_array(architecture, ones(number_nodes) .* initial_stipe_radii) for p in 1:number_kelp]
@@ -164,7 +210,6 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                                              old_velocities, 
                                                              old_accelerations, 
                                                              drag_forces,
-                                                             surface,
                                                              drag_field))
 
     return LagrangianParticles(kelps; parameters = merge(parameters, (; timestepper, max_Δt)), dynamics = kelp_dynamics!)
