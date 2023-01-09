@@ -41,8 +41,8 @@ end
             i, j, k = properties.positions_ijk[p][n, :]
             vertical_spread = max(1, k - k_base  + 1)
 
-            vol = sum(ntuple(n -> Vᶜᶜᶜ(i, j, k + n - 1, model.grid), vertical_spread))
-            total_scaling = sf / (vertical_spread * vol * parameters.ρₒ * vertical_spread)
+            vol = Vᶜᶜᶜ(i, j, k, model.grid) * vertical_spread #sum(ntuple(n -> Vᶜᶜᶜ(i, j, k + n - 1, model.grid), vertical_spread))
+            total_scaling = sf / (vol * parameters.ρₒ)
 
             drag_set.u.field[i, j, k_base:k] = drag_set.u.field[i, j, k_base:k] .- properties.drag_forces[p][n, 1] * total_scaling
             drag_set.v.field[i, j, k_base:k] = drag_set.v.field[i, j, k_base:k] .- properties.drag_forces[p][n, 2] * total_scaling
