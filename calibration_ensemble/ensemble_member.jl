@@ -49,8 +49,9 @@ function get_observable(simulation, observed_locations)
 end
 
 id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation = ARGS
+id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation = parse.(Float64, (id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation))
 
-filepath = "calibration_ensemble_$(Cᵈᵇ)_$(peak_density)_$dropoff_$(Aᵤ)"
+filepath = "calibration_ensemble_$(Cᵈᵇ)_$(peak_density)_$(dropoff)_$(Aᵤ)"
 
 arch = Oceananigans.CPU()
 FT = Float64
