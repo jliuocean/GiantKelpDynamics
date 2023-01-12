@@ -1,6 +1,26 @@
 
 @inline tension(Δx, l₀, Aᶜ, params) = Δx > l₀ && !(Δx == 0.0)  ? params.k * ((Δx - l₀) / l₀) ^ params.α * Aᶜ : 0.0
 
+
+# This is only valid on a regularly spaced grid
+# Benchmarks a lot lot faster than mean or sum()/dk etc. and about same speed as _interpolate which is weird
+@inline function mean_squared_velocity(velocity::Field, i::Int, j::Int, k1::Int, k2::Int)
+    res::Float64 = 0.0
+    @unroll for k in k1:k2
+        v = @inbounds velocity[i, j, k]
+        res += v * abs(v)
+    end
+    return sign(res) * sqrt(abs(res)) / (k2 - k1 + 1)
+end
+
+@inline function mean_velocity(velocity::Field, i::Int, j::Int, k1::Int, k2::Int)
+    res::Float64 = 0.0
+    @unroll for k in k1:k2
+        res += @inbounds velocity[i, j, k]
+    end
+    return res / (k2 - k1 + 1)
+end
+
 @kernel function step_node!(x_base, 
                             y_base, 
                             z_base, 
@@ -60,13 +80,21 @@
     η, j = modf(j)
     ζ, k = modf(k)
 
-    @inbounds positions_ijk[p][n, :] = [i + 1, j + 1, k + 1]
+    i = Int(i + 1)
+    j = Int(j + 1)
+    k = Int(k + 1)
 
-    u⃗ʷ = [ntuple(n -> _interpolate(water_velocities[n], ξ, η, ζ, Int(i+1), Int(j+1), Int(k+1)), 3)...]
+    @inbounds positions_ijk[p][n, :] = [i, j, k]
+
+    ζ_base, k_base = @inbounds n == 1 ? (0.0, 1) : modf(1 +  fractional_z_index(positions[p][n - 1, 3] + z_base[p], Center(), water_velocities.u.grid)) # benchmarked and this is faster than ifelseing it
+
+    k_base = Int(k_base)
+
+    u⃗ʷ = @inbounds [ntuple(d -> mean_squared_velocity(water_velocities[d], i, j, k_base, k), 3)...] # [ntuple(d -> _interpolate(water_velocities[d], ξ, η, ζ, i, j, k), 3)...]
     u⃗ᵣₑₗ = u⃗ʷ - u⃗ⁱ
     sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
 
-    a⃗ʷ = [ntuple(n -> _interpolate(water_accelerations[n], ξ, η, ζ, Int(i+1), Int(j+1), Int(k+1)), 3)...]
+    a⃗ʷ = @inbounds [ntuple(d -> mean_velocity(water_accelerations[d], i, j, k_base, k), 3)...] #[ntuple(d -> mean_velocity(water_accelerations[d], i, j, k_base, k), 3)...]
     #a⃗ⁱ = @inbounds accelerations[p][n, :]
     #a⃗ᵣₑₗ = a⃗ʷ - a⃗ⁱ 
 
@@ -170,4 +198,5 @@ function kelp_dynamics!(particles, model, Δt)
             wait(step_event)
         end
     end
+    particles.parameters.other_dynamics(particles, model, Δt)
 end

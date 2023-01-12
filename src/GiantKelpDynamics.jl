@@ -1,16 +1,21 @@
 module GiantKelpDynamics
 
-export GiantKelp, kelp_dynamics!, fully_resolved_drag!, DiscreteDrag, DiscreteDragSet
+export GiantKelp, 
+       kelp_dynamics!, 
+       fully_resolved_drag!, 
+       DiscreteDrag, 
+       DiscreteDragSet
 
 using KernelAbstractions, LinearAlgebra, StructArrays
 using KernelAbstractions.Extras: @unroll
 using Oceananigans.Architectures: device, arch_array
-using Oceananigans.Fields: _interpolate, fractional_indices
+using Oceananigans.Fields: _interpolate, fractional_indices, fractional_z_index, Field
 using Oceananigans.Utils: work_layout
 using Oceananigans.Operators: Vᶜᶜᶜ
 using Oceananigans: CPU, node, Center, CenterField
 using Oceananigans.LagrangianParticleTracking: AbstractParticle, LagrangianParticles
 using Oceananigans.Grids: node
+using Statistics: mean
 
 import Adapt: adapt_structure
 
@@ -116,6 +121,7 @@ adapt_structure(to, kelp::GiantKelp) = GiantKelp(kelp.x, kelp.y, kelp.z,
 
 @inline guassian_smoothing(r, rᵉ) = exp(-(r) ^ 2 / (2 * rᵉ ^ 2))/sqrt(2 * π * rᵉ ^ 2)
 @inline no_smoothing(r, rᵉ) = 1.0
+@inline nothingfunc(args...) = nothing
 
 function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                       number_kelp = length(base_x),
@@ -144,7 +150,8 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                     kᵈ = 500),
                       timestepper = RK3(),
                       drag_fields = true,
-                      max_Δt = Inf) where {FT}
+                      max_Δt = Inf,
+                      other_dynamics = nothingfunc) where {FT}
 
     base_x = arch_array(architecture, base_x)
     base_y = arch_array(architecture, base_y)
@@ -214,7 +221,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                                                          drag_forces,
                                                          drag_field))
 
-    return LagrangianParticles(kelps; parameters = merge(parameters, (; timestepper, max_Δt)), dynamics = kelp_dynamics!)
+    return LagrangianParticles(kelps; parameters = merge(parameters, (; timestepper, max_Δt, other_dynamics)), dynamics = kelp_dynamics!)
 end
 
 include("dynamics.jl")

@@ -37,7 +37,7 @@ end
     @inbounds @unroll for p in 1:length(model.particles)
         sf = properties.scalefactor[p]
         k_base = 1
-        for n in 1:parameters.n_nodes
+        @unroll for n in 1:parameters.n_nodes
             i, j, k = properties.positions_ijk[p][n, :]
             vertical_spread = max(1, k - k_base  + 1)
 
@@ -47,6 +47,8 @@ end
             drag_set.u.field[i, j, k_base:k] = drag_set.u.field[i, j, k_base:k] .- properties.drag_forces[p][n, 1] * total_scaling
             drag_set.v.field[i, j, k_base:k] = drag_set.v.field[i, j, k_base:k] .- properties.drag_forces[p][n, 2] * total_scaling
             drag_set.w.field[i, j, k_base:k] = drag_set.w.field[i, j, k_base:k] .- properties.drag_forces[p][n, 3] * total_scaling
+
+            # Do we want to weight the distriution of drag by u^2/mean(u^2)? without we get some weird redistribution where we apply too much drag force to low velocity and too little to high
 
             k_base = k
         end

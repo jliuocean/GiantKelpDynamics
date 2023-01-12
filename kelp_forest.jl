@@ -34,7 +34,7 @@ sf = Vector{FT}()
 real_density = 0.5 # 1/m²
 grid_density = real_density * (Lx / Nx * Ly / Ny)
 node_density = 1
-base_scaling = node_density * grid_density
+base_scaling = node_density * grid_density * peak_density
 
 for x in xnodes(Center, grid)[1:node_density:end], y in ynodes(Center, grid)[1:node_density:end]
     r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
@@ -53,7 +53,7 @@ kelps = GiantKelp(; grid,
                     number_nodes, 
                     segment_unstretched_length, 
                     base_x = xs, base_y = ys, base_z = -8.0 * ones(length(xs)), 
-                    initial_blade_areas = [0.1 * 10, 0.1 * 20],
+                    initial_blade_areas = 3.0 .* [0.85, 0.15],
                     scalefactor = sf, 
                     architecture = arch, 
                     max_Δt = 0.4,
@@ -64,7 +64,7 @@ kelps = GiantKelp(; grid,
                                   ρₐ = 1.225, 
                                   g = 9.81, 
                                   Cᵈˢ = 1.0, 
-                                  Cᵈᵇ= 0.4 * 12 ^ -0.485, 
+                                  Cᵈᵇ= 0.3 * 12 ^ -0.485, 
                                   Cᵃ = 3.0,
                                   n_nodes = number_nodes,
                                   τ = 1.0,
@@ -75,40 +75,35 @@ kelps = GiantKelp(; grid,
 drag_set = DiscreteDragSet(; grid)
 
 # I think this ω gives a period of 1 day but it should be 12 hours?
-u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.15, Aᵥ = 0.05, ϕᵤ = -π/2, ϕᵥ = -π/2, t_central = 0, ω = 1.41e-4)), 
+u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.15, Aᵥ = 0.05, ϕᵤ = -π/2, ϕᵥ = -π, t_central = 0, ω = 1.41e-4)), 
              drag_set.u)
-v_forcing = drag_set.v
+
+v_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.05, Aᵥ = 0.15, ϕᵤ = -π, ϕᵥ = -π/2, t_central = 0, ω = 1.41e-4)),
+             drag_set.v)
+
 w_forcing = drag_set.w
-#=
+
 u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
-=#
 
-u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0), north = ValueBoundaryCondition(0.0))
-v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0), north = OpenBoundaryCondition(0.0))
-w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0), north = ValueBoundaryCondition(0.0))
-
-#Aᵤ = 7.00e-2, Aᵥ = 4.68e-2, ϕᵤ = 1.038, ϕᵥ = 3.80, t_central = 1.58e7, ω = 6.76e-5
 model = NonhydrostaticModel(; grid,
-                              advection = UpwindBiased(),
                               timestepper = :RungeKutta3,
                               closure = AnisotropicMinimumDissipation(),
                               forcing = (u = u_forcing, v = v_forcing, w = w_forcing),
                               boundary_conditions = (u = u_bcs, v = v_bcs, w = w_bcs),
-                              coriolis = FPlane(; latitude = 34.5),
                               particles = kelps)
 
-uᵢ(x, y, z) = 0.25 * cos(u_forcing[1].parameters.ω * 0.0 - u_forcing[1].parameters.ϕᵤ) + 0.25 * 0.01 * (rand() - 0.5)
-#vᵢ(x, y, z) = 4.68e-2 * cos(- 6.76e-5 * 1.58e7 - 3.80)
+uᵢ(x, y, z) = 0.15 * cos(π/2) + 0.15 * (rand() - 0.5) * 2 * 0.01
+vᵢ(x, y, z) = 0.05 * cos(π) * (1 + (rand() - 0.5) * 2 * 0.01)
 
-set!(model, u = uᵢ)
+set!(model, u = uᵢ, v = vᵢ)
 
 Δt₀ = 0.5
 # initialise kelp positions_ijk
 kelp_dynamics!(kelps, model, Δt₀)
 
-filepath = "forest_small_v"
+filepath = "forest_depth_avg_velocity_new"
 
 simulation = Simulation(model, Δt = Δt₀, stop_time = 1year)
 
@@ -257,7 +252,8 @@ fig = Figure(resolution = (1600, 1600))
 ax = Axis(fig[1, 1])
 
 scatter!(ax, u₁, u₃)
-lines!(ax, [-.3, .3], [-.3, .3], color=:black, linestyle=:dot)
+umax = max(maximum(abs, u₁), maximum(abs, u₃))
+lines!(ax, [-umax, umax], [-umax, umax], color=:black, linestyle=:dot)
 lines!(ax, u₁³_pos.x, u₁³_pos.y, color=:black, label = "$(u₁³_pos.b) + $(u₁³_pos.a) x, r² = $(u₁³_pos.R^2)")
 lines!(ax, u₁³_neg.x, u₁³_neg.y, color=:black, label = "$(u₁³_neg.b) + $(u₁³_neg.a) x, r² = $(u₁³_neg.R^2)")
 axislegend(ax, position = :lt)
@@ -280,9 +276,12 @@ fig = Figure(resolution = (1600, 1600))
 ax = Axis(fig[1, 1])
 
 scatter!(ax, u₁₃, u₁₁)
-lines!(ax, [-.3, .3], [-.3, .3], color=:black, linestyle=:dot)
+umax = max(maximum(abs, u₁₃), maximum(abs, u₁₁))
+lines!(ax, [-umax, umax], [-umax, umax], color=:black, linestyle=:dot)
 lines!(ax, u₁₃¹¹_pos.x, u₁₃¹¹_pos.y, color=:black, label = "$(u₁₃¹¹_pos.b) + $(u₁₃¹¹_pos.a) x, r² = $(u₁₃¹¹_pos.R^2)")
 lines!(ax, u₁₃¹¹_neg.x, u₁₃¹¹_neg.y, color=:black, label = "$(u₁₃¹¹_neg.b) + $(u₁₃¹¹_neg.a) x, r² = $(u₁₃¹¹_neg.R^2)")
 axislegend(ax, position = :lt)
 
 save("$(filepath)_east.png", fig)
+
+return "$(filepath)_west.png", "$(filepath)_east.png"
