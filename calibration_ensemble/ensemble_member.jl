@@ -48,7 +48,7 @@ function get_observable(simulation, observed_locations)
     return observable
 end
 
-generation, id = parse.(Int, ARGS)
+generation, id = ARGS[1], parse(Int, ARGS[2])
 
 file = jldopen("ensemble_generation_$generation.jld2")
 Cᵈᵇ, peak_density, dropoff, Aᵤ = @show [file["parameters/$symbol"][id] for symbol in (:Cᵈᵇ, :peak_density, :dropoff, :Aᵤ)]
