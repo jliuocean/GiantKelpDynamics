@@ -51,7 +51,7 @@ end
 id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation = ARGS
 id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation = float.((id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation))
 
-filepath = "calibration_ensemble_$(Cᵈᵇ)_$(peak_density)_$(dropoff)_$(Aᵤ)"
+filepath = "calibration_ensemble_$id"
 
 arch = Oceananigans.CPU()
 FT = Float64
