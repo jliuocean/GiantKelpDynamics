@@ -48,10 +48,15 @@ function get_observable(simulation, observed_locations)
     return observable
 end
 
-id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation = ARGS
-id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation = parse.(Float64, (id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation))
+generation, id = parse.(Int, ARGS)
 
-filepath = "calibration_ensemble_$(Cᵈᵇ)_$(peak_density)_$(dropoff)_$(Aᵤ)"
+file = jldopen("ensemble_generation_$generation.jld2")
+Cᵈᵇ, peak_density, dropoff, Aᵤ = @show [file["parameters/$symbol"][id] for symbol in (:Cᵈᵇ, :peak_density, :dropoff, :Aᵤ)]
+close(file)
+
+#Cᵈᵇ, peak_density, dropoff, Aᵤ = parse.(Float64, (id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation))
+
+filepath = "calibration_ensemble_$(generation)_$(id)"
 
 arch = Oceananigans.CPU()
 FT = Float64
@@ -137,9 +142,13 @@ model = NonhydrostaticModel(; grid,
 
 Δt₀ = 0.5
 
+uᵢ(x, y, z) = Aᵤ * cos(π/2) + Aᵤ * (rand() - 0.5) * 2 * 0.01
+vᵢ(x, y, z) = 0.05 * cos(π) * (1 + (rand() - 0.5) * 2 * 0.01)
+
+set!(model, u = uᵢ, v = vᵢ)
+
 # initialise kelp positions_ijk
 kelp_dynamics!(kelps, model, Δt₀)
-
 
 simulation = Simulation(model, Δt = Δt₀, stop_time = 1year)
 

@@ -4,10 +4,11 @@ import Base: randn
 function write_member_start_file(id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation)
     file_text = "#!/bin/bash
 #SBATCH -p skylake
-#SBATCH --cpus-per-task=12
+#SBATCH --cpus-per-task=14
 #SBATCH --time=12:00:00
+#SBATCH --array=1-100
 
-julia --project=/nfs/st01/hpc-atmos-jrt51/js2430/KelpPhysics --threads=12 ensemble_member.jl $id $Cᵈᵇ $peak_density $dropoff $Aᵤ $generation"
+julia --project=/nfs/st01/hpc-atmos-jrt51/js2430/KelpPhysics --threads=12 ensemble_member.jl $SLURM_ARRAY_TASK_ID"#$id $Cᵈᵇ $peak_density $dropoff $Aᵤ $generation"
     open("generation_$(generation)_id_$id.sh", "w+") do file
         write(file, file_text)
     end
@@ -25,7 +26,7 @@ generation = 1
 Cᵈᵇ = randn(0.4 * 12 ^ -0.485, 0.1 * 0.4 * 12 ^ -0.485, 0.01 * 0.4 * 12 ^ -0.485, Inf, (ensemble_size, ))
 peak_density = randn(1, 0.5, 0.1, Inf, (ensemble_size, ))
 dropoff = randn(10.0, 5.0, 1.0, 50.0, (ensemble_size, ))
-Aᵤ = randn(0.2, 0.05, 0.05, 0.5, (ensemble_size, ))
+Aᵤ = randn(0.2, 0.05, 0.05, 0.3, (ensemble_size, ))
 
 jldopen("ensemble_generation_$generation.jld2", "w+") do file
     file["parameters/Cᵈᵇ"] = Cᵈᵇ
@@ -33,6 +34,7 @@ jldopen("ensemble_generation_$generation.jld2", "w+") do file
     file["parameters/dropoff"] = dropoff
     file["parameters/Aᵤ"] = Aᵤ
 end
+#=
 runfile = "#!/bin/bash"
 
 for id in 1:ensemble_size
@@ -43,3 +45,4 @@ end
 open("run_$generation.sh", "w+") do file
     write(file, runfile)
 end
+=#

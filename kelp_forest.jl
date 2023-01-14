@@ -34,7 +34,7 @@ sf = Vector{FT}()
 real_density = 0.5 # 1/m²
 grid_density = real_density * (Lx / Nx * Ly / Ny)
 node_density = 1
-base_scaling = node_density * grid_density * peak_density
+base_scaling = node_density * grid_density
 
 for x in xnodes(Center, grid)[1:node_density:end], y in ynodes(Center, grid)[1:node_density:end]
     r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
@@ -56,7 +56,7 @@ kelps = GiantKelp(; grid,
                     initial_blade_areas = 3.0 .* [0.85, 0.15],
                     scalefactor = sf, 
                     architecture = arch, 
-                    max_Δt = 0.4,
+                    max_Δt = 0.45,
                     drag_fields = false,
                     parameters = (k = 10 ^ 5, 
                                   α = 1.41, 
@@ -92,18 +92,19 @@ model = NonhydrostaticModel(; grid,
                               closure = AnisotropicMinimumDissipation(),
                               forcing = (u = u_forcing, v = v_forcing, w = w_forcing),
                               boundary_conditions = (u = u_bcs, v = v_bcs, w = w_bcs),
-                              particles = kelps)
+                              particles = kelps, )
+                              #tracers = (:U, :O)) #takeUp, Outputted
 
 uᵢ(x, y, z) = 0.15 * cos(π/2) + 0.15 * (rand() - 0.5) * 2 * 0.01
 vᵢ(x, y, z) = 0.05 * cos(π) * (1 + (rand() - 0.5) * 2 * 0.01)
 
-set!(model, u = uᵢ, v = vᵢ)
+set!(model, u = uᵢ, v = vᵢ)#, U = 100)
 
 Δt₀ = 0.5
 # initialise kelp positions_ijk
 kelp_dynamics!(kelps, model, Δt₀)
 
-filepath = "forest_depth_avg_velocity_new"
+filepath = "forest_timestep_test"
 
 simulation = Simulation(model, Δt = Δt₀, stop_time = 1year)
 
@@ -130,11 +131,11 @@ function store_particles!(sim)
     end
 end
 
-simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(5minute))
+#simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(5minute))
 
-simulation.output_writers[:checkpointer] = Checkpointer(model, schedule = TimeInterval(1hour), overwrite_existing = true)
+#simulation.output_writers[:checkpointer] = Checkpointer(model, schedule = TimeInterval(1hour), overwrite_existing = true)
 
-simulation.stop_time = 10days
+simulation.stop_time = 2.5 * 2π / 1.41e-4
 
 run!(simulation, pickup = false)
 
