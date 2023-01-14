@@ -48,10 +48,15 @@ function get_observable(simulation, observed_locations)
     return observable
 end
 
-id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation = ARGS
-id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation = float.((id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation))
+generation, id = ARGS[1], parse(Int, ARGS[2])
 
-filepath = "calibration_ensemble_$id"
+file = jldopen("ensemble_generation_$generation.jld2")
+Cᵈᵇ, peak_density, dropoff, Aᵤ = @show [file["parameters/$symbol"][id] for symbol in (:Cᵈᵇ, :peak_density, :dropoff, :Aᵤ)]
+close(file)
+
+#Cᵈᵇ, peak_density, dropoff, Aᵤ = parse.(Float64, (id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation))
+
+filepath = "calibration_ensemble_$(generation)_$(id)"
 
 arch = Oceananigans.CPU()
 FT = Float64
