@@ -73,6 +73,7 @@ kelps = GiantKelp(; grid,
 @inline tidal_forcing(x, y, z, t, params) = - params.Aᵤ * params.ω * sin(params.ω * (t - params.t_central) - params.ϕᵤ) - params.Aᵥ * params.ω * cos(params.ω * (t - params.t_central) - params.ϕᵥ)
 
 drag_set = DiscreteDragSet(; grid)
+tracer_exchange = TracerExchange(kelps, 10.0, 0.1)
 
 # I think this ω gives a period of 1 day but it should be 12 hours?
 u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.15, Aᵥ = 0.05, ϕᵤ = -π/2, ϕᵥ = -π, t_central = 0, ω = 1.41e-4)), 
@@ -92,30 +93,33 @@ model = NonhydrostaticModel(; grid,
                               closure = AnisotropicMinimumDissipation(),
                               forcing = (u = u_forcing, v = v_forcing, w = w_forcing),
                               boundary_conditions = (u = u_bcs, v = v_bcs, w = w_bcs),
-                              particles = kelps, )
-                              #tracers = (:U, :O)) #takeUp, Outputted
+                              particles = kelps, 
+                              tracers = (:U, :O)) #takeUp, Outputted
 
 uᵢ(x, y, z) = 0.15 * cos(π/2) + 0.15 * (rand() - 0.5) * 2 * 0.01
 vᵢ(x, y, z) = 0.05 * cos(π) * (1 + (rand() - 0.5) * 2 * 0.01)
 
-set!(model, u = uᵢ, v = vᵢ)#, U = 100)
+set!(model, u = uᵢ, v = vᵢ, U = 10)
 
 Δt₀ = 0.5
 # initialise kelp positions_ijk
 kelp_dynamics!(kelps, model, Δt₀)
 
-filepath = "forest_timestep_test"
+filepath = "forest_tracers"
 
 simulation = Simulation(model, Δt = Δt₀, stop_time = 1year)
 
 simulation.callbacks[:update_drag_fields] = Callback(drag_set; callsite = TendencyCallsite())
+simulation.callbacks[:tracer_exchange] = Callback(tracer_exchange; callsite = TendencyCallsite())
+
 
 wizard = TimeStepWizard(cfl = 0.8, max_change = 1.1, min_change = 0.8)
 simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
 
-progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, min(|u|) = %.1e ms⁻¹, wall time: %s\n",
+progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, min(|u|) = %.1e ms⁻¹, wall time: %s, min(|U|) = %.1e , max(|O|) = %.1e \n",
                                  iteration(sim), prettytime(sim), prettytime(sim.Δt),
-                                 maximum(abs, sim.model.velocities.u), minimum(abs, sim.model.velocities.u), prettytime(sim.run_wall_time))
+                                 maximum(abs, sim.model.velocities.u), minimum(abs, sim.model.velocities.u), prettytime(sim.run_wall_time),
+                                 minimum(sim.model.tracers.U), maximum(sim.model.tracers.O))
     
 simulation.callbacks[:progress] = Callback(progress_message, TimeInterval(5minute))
 

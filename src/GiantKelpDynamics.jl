@@ -4,7 +4,8 @@ export GiantKelp,
        kelp_dynamics!, 
        fully_resolved_drag!, 
        DiscreteDrag, 
-       DiscreteDragSet
+       DiscreteDragSet,
+       TracerExchange
 
 using KernelAbstractions, LinearAlgebra, StructArrays
 using KernelAbstractions.Extras: @unroll
@@ -227,4 +228,5 @@ end
 include("dynamics.jl")
 include("full_drag.jl")
 include("fast_drag.jl")
+include("tracer_exchange.jl")
 end # module
