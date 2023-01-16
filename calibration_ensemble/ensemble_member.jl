@@ -51,10 +51,9 @@ end
 generation, id = ARGS[1], parse(Int, ARGS[2])
 
 file = jldopen("ensemble_generation_$generation.jld2")
-Cᵈᵇ, peak_density, dropoff, Aᵤ = @show [file["parameters/$symbol"][id] for symbol in (:Cᵈᵇ, :peak_density, :dropoff, :Aᵤ)]
+Cᵈᵇ, dropoff, Aᵤ = @show [file["parameters/$symbol"][id] for symbol in (:Cᵈᵇ, :dropoff, :Aᵤ)]
 close(file)
 
-#Cᵈᵇ, peak_density, dropoff, Aᵤ = parse.(Float64, (id, Cᵈᵇ, peak_density, dropoff, Aᵤ, generation))
 
 filepath = "calibration_ensemble_$(generation)_$(id)"
 
@@ -80,7 +79,7 @@ sf = Vector{FT}()
 real_density = 0.5 # 1/m²
 grid_density = real_density * (Lx / Nx * Ly / Ny)
 node_density = 1
-base_scaling = node_density * grid_density * peak_density
+base_scaling = node_density * grid_density
 
 for x in xnodes(Center, grid)[1:node_density:end], y in ynodes(Center, grid)[1:node_density:end]
     r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
