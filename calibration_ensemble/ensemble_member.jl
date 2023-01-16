@@ -163,8 +163,8 @@ progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = 
     
 simulation.callbacks[:progress] = Callback(progress_message, TimeInterval(1hour))
 
-depth_average_u = mean(model.velocities.u, dims = 3)
-depth_average_v = mean(model.velocities.v, dims = 3)
+depth_average_u = Average(model.velocities.u, dims = 3)
+depth_average_v = Average(model.velocities.v, dims = 3)
 
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(model, (; depth_average_u, depth_average_v), filename = "$filepath.jld2", schedule = TimeInterval(5minute), overwrite_existing = true)

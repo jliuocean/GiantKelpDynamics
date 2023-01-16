@@ -32,7 +32,7 @@ function x⃗₀(number, depth, l₀::Array, initial_stretch::Array)
         if sum(l₀[1:i]) * initial_stretch[i] - depth < 0
             x[i, 3] = sum(l₀[1:i] .* initial_stretch[1:i])
         else
-            x[i, :] = [sum(l₀[1:i] .* initial_stretch[1:i]) - depth, 0.0, depth]
+            x[i, :] = [- (sum(l₀[1:i] .* initial_stretch[1:i]) - depth), 0.0, depth]
         end
     end
     return x
