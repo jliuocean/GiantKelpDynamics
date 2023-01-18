@@ -57,8 +57,7 @@ function run_member(id, generation, Cᵈᵇ, dropoff, Aᵤ)
     Nx, Ny, Nz = 5 * 256, 256, 8
     grid = RectilinearGrid(arch, FT;
                         size=(Nx, Ny, Nz), 
-                        extent=(Lx, Ly, Lz),
-                        topology=(Periodic, Bounded, Bounded))
+                        extent=(Lx, Ly, Lz))
 
     # ## Setup kelp particles
 
