@@ -53,8 +53,8 @@ function run_member(id, generation, Cᵈᵇ, dropoff, Aᵤ)
     FT = Float64
 
     # ## Setup grid 
-    Lx, Ly, Lz = 1kilometers, 1kilometers, 8
-    Nx, Ny, Nz = 256, 256, 8
+    Lx, Ly, Lz = 5kilometers, 1kilometers, 8
+    Nx, Ny, Nz = 5 * 256, 256, 8
     grid = RectilinearGrid(arch, FT;
                         size=(Nx, Ny, Nz), 
                         extent=(Lx, Ly, Lz),
