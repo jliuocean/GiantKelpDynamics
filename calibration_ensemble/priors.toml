@@ -9,4 +9,4 @@ constraint = "bounded(10.0, 50.0)"
 
 [A]
 prior = "Parameterized(Normal(1.0, 1.0))"
-constraint = "bounded(0.0, 0.3)"
+constraint = "bounded(0.1, 0.3)"

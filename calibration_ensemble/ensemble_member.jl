@@ -53,8 +53,8 @@ function run_member(id, generation, Cᵈᵇ, dropoff, Aᵤ)
     FT = Float64
 
     # ## Setup grid 
-    Lx, Ly, Lz = 5kilometers, 1kilometers, 8
-    Nx, Ny, Nz = 5 * 256, 256, 8
+    Lx, Ly, Lz = 3kilometers, 1kilometers, 8
+    Nx, Ny, Nz = 3 * 256, 256, 8
     grid = RectilinearGrid(arch, FT;
                         size=(Nx, Ny, Nz), 
                         extent=(Lx, Ly, Lz))
@@ -110,11 +110,12 @@ function run_member(id, generation, Cᵈᵇ, dropoff, Aᵤ)
 
     drag_set = DiscreteDragSet(; grid)
 
-    # I think this ω gives a period of 1 day but it should be 12 hours?
-    u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = Aᵤ, Aᵥ = 0.05, ϕᵤ = -π/2, ϕᵥ = -π, t_central = 0, ω = 1.41e-4)), 
+    Aᵥ = 0.0
+
+    u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = Aᵤ, Aᵥ = Aᵥ, ϕᵤ = -π/2, ϕᵥ = -π, t_central = 0, ω = 1.41e-4)), 
                 drag_set.u)
 
-    v_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.05, Aᵥ = Aᵤ, ϕᵤ = -π, ϕᵥ = -π/2, t_central = 0, ω = 1.41e-4)),
+    v_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = Aᵥ, Aᵥ = Aᵤ, ϕᵤ = -π, ϕᵥ = -π/2, t_central = 0, ω = 1.41e-4)),
                 drag_set.v)
 
     w_forcing = drag_set.w
@@ -133,7 +134,7 @@ function run_member(id, generation, Cᵈᵇ, dropoff, Aᵤ)
     Δt₀ = 0.5
 
     uᵢ(x, y, z) = Aᵤ * cos(π/2) + Aᵤ * (rand() - 0.5) * 2 * 0.01
-    vᵢ(x, y, z) = 0.05 * cos(π) * (1 + (rand() - 0.5) * 2 * 0.01)
+    vᵢ(x, y, z) = Aᵥ * cos(π) * (1 + (rand() - 0.5) * 2 * 0.01)
 
     set!(model, u = uᵢ, v = vᵢ)
 
