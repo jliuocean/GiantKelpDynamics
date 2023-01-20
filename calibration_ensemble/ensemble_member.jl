@@ -169,5 +169,5 @@ end
 
 function parameter_to_data_map(u, id, generation, observation_i, observation_j)
     final_state = run_member(id, generation, u["C"], u["dropoff"], u["A"])
-    return get_observable(final_state.output_writers[:profile].filepath, observation_i, observation_j)
+    return get_observable(final_state.output_writers[:profiles].filepath, observation_i, observation_j)
 end
