@@ -115,8 +115,8 @@ function run_member(id, generation, Cᵈᵇ, dropoff, Aᵤ)
     u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = Aᵤ, Aᵥ = Aᵥ, ϕᵤ = -π/2, ϕᵥ = -π, t_central = 0, ω = 1.41e-4)), 
                 drag_set.u)
 
-    v_forcing = #(Forcing(tidal_forcing, parameters = (Aᵤ = Aᵥ, Aᵥ = Aᵤ, ϕᵤ = -π, ϕᵥ = -π/2, t_central = 0, ω = 1.41e-4)),
-                drag_set.v#)
+    v_forcing = drag_set.v#(Forcing(tidal_forcing, parameters = (Aᵤ = Aᵥ, Aᵥ = Aᵤ, ϕᵤ = -π, ϕᵥ = -π/2, t_central = 0, ω = 1.41e-4)),
+                #)
 
     w_forcing = drag_set.w
 
@@ -134,7 +134,7 @@ function run_member(id, generation, Cᵈᵇ, dropoff, Aᵤ)
     Δt₀ = 0.5
 
     uᵢ(x, y, z) = Aᵤ * cos(π/2) + Aᵤ * (rand() - 0.5) * 2 * 0.01
-    vᵢ(x, y, z) = Aᵥ * cos(π) * (1 + (rand() - 0.5) * 2 * 0.01)
+    vᵢ(x, y, z) = (rand() - 0.5) * 0.001
 
     set!(model, u = uᵢ, v = vᵢ)
 

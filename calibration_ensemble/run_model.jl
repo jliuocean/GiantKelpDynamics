@@ -30,10 +30,10 @@ function main()
     names = ["C"]#, "dropoff", "A"]
     params = @show get_param_values(param_dict, names)
 
-    @load "other_params.jld2" dropoff u
+    @load "other_params.jld2" dropoff Aᵤ
 
     # evaluate map with noise to create data
-    model_output = parameter_to_data_map(params, member, iteration, observation_i, observation_j, dropoff, u)
+    model_output = parameter_to_data_map(params, member, iteration, observation_i, observation_j, dropoff, Aᵤ)
 
     output_path = joinpath(member_path, "output.jld2")
     @save output_path model_output
