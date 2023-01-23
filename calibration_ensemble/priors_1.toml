@@ -1,0 +1,12 @@
+# Priors
+[C]
+prior = "Parameterized(Normal(-2.5, 1.0))"
+constraint = "bounded(0.01, 1.0)"
+
+[dropoff]
+prior = "Parameterized(Normal(1.0, 1.0))"
+constraint = "bounded(10.0, 50.0)"
+
+[A]
+prior = "Parameterized(Normal(1.0, 1.0))"
+constraint = "bounded(0.1, 0.3)"

@@ -27,11 +27,13 @@ function main()
     # get parameters
     member_path = path_ensemble(output_dir, iteration, member)
     param_dict = TOML.parsefile(joinpath(member_path, "parameters.toml"))
-    names = ["C", "dropoff", "A"]
+    names = ["C"]#, "dropoff", "A"]
     params = @show get_param_values(param_dict, names)
 
+    @load "other_params.jld2" dropoff u
+
     # evaluate map with noise to create data
-    model_output = parameter_to_data_map(params, member, iteration, observation_i, observation_j)
+    model_output = parameter_to_data_map(params, member, iteration, observation_i, observation_j, dropoff, u)
 
     output_path = joinpath(member_path, "output.jld2")
     @save output_path model_output

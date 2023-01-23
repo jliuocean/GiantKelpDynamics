@@ -25,7 +25,7 @@ function get_observable(path, observation_i, observation_j)
     push!(observables, std(middle_station_u))
 
     for station_idx in 3:length(observation_i)
-        comparison_data_u = u[observation_i[I], observation_j[I], 1, :]
+        comparison_data_u = u[observation_i[station_idx], observation_j[station_idx], 1, :]
 
         std_u = std(comparison_data_u)
 
@@ -42,12 +42,12 @@ function get_observable(path, observation_i, observation_j)
         push!(observables, downstream.a)
     end
 
-    return observable
+    return observables
 end
 
 function run_member(id, generation, Cᵈᵇ, dropoff, Aᵤ)
     @info "$id, $generation, $Cᵈᵇ, $dropoff, $Aᵤ"
-    filepath = "raw_results/calibration_ensemble_$(generation)_$(id)"
+    filepath = "raw_results/calibration_ensemble_v2_$(generation)_$(id)"
 
     arch = Oceananigans.CPU()
     FT = Float64
@@ -115,8 +115,8 @@ function run_member(id, generation, Cᵈᵇ, dropoff, Aᵤ)
     u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = Aᵤ, Aᵥ = Aᵥ, ϕᵤ = -π/2, ϕᵥ = -π, t_central = 0, ω = 1.41e-4)), 
                 drag_set.u)
 
-    v_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = Aᵥ, Aᵥ = Aᵤ, ϕᵤ = -π, ϕᵥ = -π/2, t_central = 0, ω = 1.41e-4)),
-                drag_set.v)
+    v_forcing = #(Forcing(tidal_forcing, parameters = (Aᵤ = Aᵥ, Aᵥ = Aᵤ, ϕᵤ = -π, ϕᵥ = -π/2, t_central = 0, ω = 1.41e-4)),
+                drag_set.v#)
 
     w_forcing = drag_set.w
 
@@ -167,7 +167,7 @@ function run_member(id, generation, Cᵈᵇ, dropoff, Aᵤ)
     return simulation
 end
 
-function parameter_to_data_map(u, id, generation, observation_i, observation_j)
-    final_state = run_member(id, generation, u["C"], u["dropoff"], u["A"])
+function parameter_to_data_map(u, id, generation, observation_i, observation_j, dropoff, u)
+    final_state = run_member(id, generation, u["C"], dropoff, u)#u["dropoff"], u["A"])
     return get_observable(final_state.output_writers[:profiles].filepath, observation_i, observation_j)
 end
