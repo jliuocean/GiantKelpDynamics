@@ -167,7 +167,7 @@ function run_member(id, generation, Cᵈᵇ, dropoff, Aᵤ)
     return simulation
 end
 
-function parameter_to_data_map(u, id, generation, observation_i, observation_j, dropoff, u)
-    final_state = run_member(id, generation, u["C"], dropoff, u)#u["dropoff"], u["A"])
+function parameter_to_data_map(u, id, generation, observation_i, observation_j, dropoff, Aᵤ)
+    final_state = run_member(id, generation, u["C"], dropoff, Aᵤ)#u["dropoff"], u["A"])
     return get_observable(final_state.output_writers[:profiles].filepath, observation_i, observation_j)
 end
