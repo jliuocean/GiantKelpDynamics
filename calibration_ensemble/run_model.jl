@@ -21,8 +21,8 @@ function main()
 
     # equiv to 1, 2, 4, 8 (2 to catch the shaddow slowdown correctly)
     # We will observe σᵤ at all, and the gradient difference between 1 vs 4 and 1 vs 8
-    observation_i = [76, 76, 110, 128] .+ 256 * 2
-    observation_j = [75, 128, 128, 128]
+    observation_i = [76, 76, 110, 128] .+ 256
+    observation_j = [100, 128, 128, 128]
 
     # get parameters
     member_path = path_ensemble(output_dir, iteration, member)
