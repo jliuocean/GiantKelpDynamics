@@ -12,7 +12,7 @@ function main()
 
     # We construct the prior from file
     param_dict = TOML.parsefile(toml_path)
-    names = ["C"]#, "dropoff", "A"]
+    names = ["C", "dropoff", "A"]
     prior_vec = [get_parameter_distribution(param_dict, n) for n in names]
     prior = combine_distributions(prior_vec)
 

@@ -31,7 +31,7 @@ function main()
     params = @show get_param_values(param_dict, names)
 
     # evaluate map with noise to create data
-    model_output = get_observable("raw_results/calibration_ensemble_$(iteration)_$(member).jld2", observation_i, observation_j)
+    model_output = get_observable("raw_results/calibration_ensemble_v3_$(iteration)_$(member).jld2", observation_i, observation_j)
 
     output_path = joinpath(member_path, "output.jld2")
     @save output_path model_output

@@ -37,9 +37,9 @@ function get_observable(path, observation_i, observation_j)
         upstream = fitlinear(reference_station_u[reference_station_upstream], comparison_data_east)
         downstream = fitlinear(reference_station_u[reference_station_downstream], comparison_data_west)
 
+        push!(observables, downstream.a)
         push!(observables, upstream.a)
 
-        push!(observables, downstream.a)
     end
 
     return observables
@@ -47,7 +47,7 @@ end
 
 function run_member(id, generation, Cᵈᵇ, dropoff, Aᵤ)
     @info "$id, $generation, $Cᵈᵇ, $dropoff, $Aᵤ"
-    filepath = "raw_results/calibration_ensemble_v2_$(generation)_$(id)"
+    filepath = "raw_results/calibration_ensemble_v3_$(generation)_$(id)"
 
     arch = Oceananigans.CPU()
     FT = Float64
@@ -167,7 +167,7 @@ function run_member(id, generation, Cᵈᵇ, dropoff, Aᵤ)
     return simulation
 end
 
-function parameter_to_data_map(u, id, generation, observation_i, observation_j, dropoff, Aᵤ)
-    final_state = run_member(id, generation, u["C"], dropoff, Aᵤ)#u["dropoff"], u["A"])
+function parameter_to_data_map(u, id, generation, observation_i, observation_j)
+    final_state = run_member(id, generation, u["C"], u["dropoff"], u["A"])
     return get_observable(final_state.output_writers[:profiles].filepath, observation_i, observation_j)
 end
