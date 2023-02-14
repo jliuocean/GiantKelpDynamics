@@ -22,7 +22,7 @@ progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = 
 simulation.callbacks[:progress] = Callback(progress_message, TimeInterval(5minute))
 
 simulation.output_writers[:profiles] =
-    JLD2OutputWriter(model, merge(model.velocities, model.tracers),
+    JLD2OutputWriter(simulation.model, merge(simulation.model.velocities, simulation.model.tracers),
                      filename = "$(output_dir)/$member.jld2",
                      schedule = TimeInterval(5minute),
                      overwrite_existing = true)
