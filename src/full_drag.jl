@@ -62,7 +62,7 @@ end
 end
 
 @kernel function drag_node!(base_x, base_y, base_z, 
-                            scalefactors, positions, 
+                            scalefactors, positions, positions_ijk,
                             effective_radii, 
                             drag_forces, 
                             grid, drag_field, 
@@ -121,7 +121,6 @@ end
             θ⁺ = -1.0 <= cosθ⁺ <= 1.0 ? acos(cosθ⁺) : 0.0
         end
 
-        @info "$θ, $ϕ, $θ⁺, $θ⁻, $(x⃗ + [base_x[p], base_y[p], base_z[p]])"
         weights_event = @inbounds weights_kernel!(drag_field[p], grid, rᵉ, l⁺, l⁻, LocalTransform(θ, ϕ, θ⁺, θ⁻, x⃗ + [base_x[p], base_y[p], base_z[p]]), parameters)
         wait(weights_event)
 
@@ -134,15 +133,14 @@ end
         # As long as the (relaxed) segment lengths are properly considered this shouldn't be an issue except during startup where upstream 
         # elements will quickly move towards dowmnstream elements
         @inbounds if normalisation == 0.0
-            (ϵ, i), (η, j), (ζ, k) = modf.(fractional_indices(x⃗..., (Center(), Center(), Center()), grid))
-            i, j, k = floor.(Int, (i, j, k))
+            @warn "Used fallback drag application as stencil found no nodes, this should be concerning if not in the initial transient response at $p, $n"
+            i, j, k = positions_ijk[p][n, :]
             vol = Vᶜᶜᶜ(i, j, k, grid)
             inverse_effective_mass = 1 / (vol * parameters.ρₒ)
             water_accelerations.u[i, j, k] -= Fᴰ[1] * inverse_effective_mass * scalefactor
             water_accelerations.v[i, j, k] -= Fᴰ[2] * inverse_effective_mass * scalefactor
             water_accelerations.w[i, j, k] -= Fᴰ[3] * inverse_effective_mass * scalefactor
 
-            @warn "Used fallback drag application as stencil found no nodes, this should be concerning if not in the initial transient response at $p, $n"
         else
             apply_drag_event = @inbounds apply_drag_kernel!(water_accelerations, drag_field[p], normalisation, grid, Fᴰ, scalefactor, parameters)
             wait(apply_drag_event)

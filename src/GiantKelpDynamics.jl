@@ -22,17 +22,17 @@ import Adapt: adapt_structure
 
 include("timesteppers.jl")
 
-x⃗₀(number, depth, l₀::Number, initial_stretch::Number) = x⃗₀(number, depth, repeat([l₀], number), repeat([initial_stretch], number))
-x⃗₀(number, depth, l₀::Array, initial_stretch::Number) = x⃗₀(number, depth, l₀, repeat([initial_stretch], number))
-x⃗₀(number, depth, l₀::Number, initial_stretch::Array) = x⃗₀(number, depth, repeat([l₀], number), initial_stretch)
+x⃗₀(number, depth, l₀::Number, initial_stretch::Number, direction) = x⃗₀(number, depth, repeat([l₀], number), repeat([initial_stretch], number), direction)
+x⃗₀(number, depth, l₀::Array, initial_stretch::Number, direction) = x⃗₀(number, depth, l₀, repeat([initial_stretch], number), direction)
+x⃗₀(number, depth, l₀::Number, initial_stretch::Array, direction) = x⃗₀(number, depth, repeat([l₀], number), initial_stretch, direction)
 
-function x⃗₀(number, depth, l₀::Array, initial_stretch::Array)
+function x⃗₀(number, depth, l₀::Array, initial_stretch::Array, direction)
     x = zeros(number, 3)
     for i in 1:number
         if sum(l₀[1:i]) * initial_stretch[i] - depth < 0
             x[i, 3] = sum(l₀[1:i] .* initial_stretch[1:i])
         else
-            x[i, :] = [- (sum(l₀[1:i] .* initial_stretch[1:i]) - depth), 0.0, depth]
+            x[i, :] = [direction * (sum(l₀[1:i] .* initial_stretch[1:i]) - depth), 0.0, depth]
         end
     end
     return x
@@ -130,14 +130,14 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                       number_nodes = 8,
                       depth = 8.0,
                       segment_unstretched_length = 0.6,
-                      initial_stipe_radii = 0.03,
-                      initial_blade_areas = 0.1 .* [i*20/number_nodes for i in 1:number_nodes],
+                      initial_stipe_radii = 0.004,
+                      initial_blade_areas = 0.2 .* [i*20/number_nodes for i in 1:number_nodes],
                       initial_pneumatocyst_volume = 0.05 * ones(number_nodes),
                       initial_effective_radii = 0.5 * ones(number_nodes),
                       initial_node_positions = nothing,
-                      initial_stretch = 2.0,
+                      initial_stretch = 1.5,
                       architecture = CPU(),
-                      parameters = (k = 10 ^ 5, 
+                      parameters = (k = 1.91 * 10 ^ 7, 
                                     α = 1.41, 
                                     ρₒ = 1026.0, 
                                     ρₐ = 1.225, 
@@ -152,6 +152,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                       timestepper = RK3(),
                       drag_fields = true,
                       max_Δt = Inf,
+                      direction = -1,
                       other_dynamics = nothingfunc) where {FT}
 
     base_x = arch_array(architecture, base_x)
@@ -166,7 +167,7 @@ function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
 
     if isnothing(initial_node_positions)
         for i in 1:number_kelp
-            push!(positions, arch_array(architecture, x⃗₀(number_nodes, depth, segment_unstretched_length, initial_stretch)))
+            push!(positions, arch_array(architecture, x⃗₀(number_nodes, depth, segment_unstretched_length, initial_stretch, direction)))
         end
     else
         if !(size(initial_node_positions) == (number_nodes, 3))
