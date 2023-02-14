@@ -7,7 +7,9 @@ member = parse(Int64, ARGS[2])
 
 @load "experiment_params.jl" forest_density 
 
-simulaiton = setup_forest(arch; Lx = 5kilometers, Ly = 2kilometers, forest_density = forest_density[member])
+simulation = setup_forest(arch; Lx = 5kilometers, Ly = 2kilometers, forest_density = forest_density[member])
+
+@info "setup forest"
 
 wizard = TimeStepWizard(cfl = 0.8, max_change = 1.1, min_change = 0.8)
 simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
