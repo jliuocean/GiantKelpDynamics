@@ -44,9 +44,9 @@ function setup_forest(arch ;
                       Aᵤ = 0.103650,
                       Aᵥ = 0.0)
 
-    Nx, Ny = (Lx, Ly) .* horizontal_res ./ 1kilometer
+    Nx, Ny = Int.((Lx, Ly) .* horizontal_res ./ 1kilometer)
     Nz = Lz * vertical_res
-    
+
     grid = RectilinearGrid(arch, FT;
                            size=(Nx, Ny, Nz), 
                            extent=(Lx, Ly, Lz), 
