@@ -14,279 +14,107 @@ if arch == Oceananigans.CPU()
 else
     adapt_array(x) = CuArray(x)
 end
-# ## Setup grid 
-Lx, Ly, Lz = 1kilometers, 1kilometers, 8
-Nx, Ny, Nz = 256, 256, 8
-grid = RectilinearGrid(arch, FT;
-                       size=(Nx, Ny, Nz), 
-                       extent=(Lx, Ly, Lz),
-                       topology=(Periodic, Bounded, Bounded))
-
-# ## Setup kelp particles
-
-forest_radius = 100
-smoothing_disance = 3.0
-
-xs = Vector{FT}()
-ys = Vector{FT}()
-sf = Vector{FT}()
-
-real_density = 0.5 # 1/m²
-grid_density = real_density * (Lx / Nx * Ly / Ny)
-node_density = 1
-base_scaling = node_density * grid_density
-
-for x in xnodes(Center, grid)[1:node_density:end], y in ynodes(Center, grid)[1:node_density:end]
-    r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
-    if r < forest_radius
-        scalefactor = base_scaling * (tanh((r + forest_radius * 0.9) / smoothing_disance) - tanh((r - forest_radius * 0.9) / smoothing_disance))/2
-        push!(xs, x)
-        push!(ys, y)
-        push!(sf, scalefactor)
-    end
-end
-
-number_nodes = 2
-segment_unstretched_length = [5.0, 4.0]
-
-kelps = GiantKelp(; grid, 
-                    number_nodes, 
-                    segment_unstretched_length, 
-                    base_x = xs, base_y = ys, base_z = -8.0 * ones(length(xs)), 
-                    initial_blade_areas = 3.0 .* [0.85, 0.15],
-                    scalefactor = sf, 
-                    architecture = arch, 
-                    max_Δt = 0.45,
-                    drag_fields = false,
-                    parameters = (k = 10 ^ 5, 
-                                  α = 1.41, 
-                                  ρₒ = 1026.0, 
-                                  ρₐ = 1.225, 
-                                  g = 9.81, 
-                                  Cᵈˢ = 1.0, 
-                                  Cᵈᵇ= 0.3 * 12 ^ -0.485, 
-                                  Cᵃ = 3.0,
-                                  n_nodes = number_nodes,
-                                  τ = 1.0,
-                                  kᵈ = 500))
 
 @inline tidal_forcing(x, y, z, t, params) = - params.Aᵤ * params.ω * sin(params.ω * (t - params.t_central) - params.ϕᵤ) - params.Aᵥ * params.ω * cos(params.ω * (t - params.t_central) - params.ϕᵥ)
 
-drag_set = DiscreteDragSet(; grid)
-tracer_exchange = TracerExchange(kelps, 10.0, 0.1)
+function setup_forest(arch ;
+                      Lx = 3kilometers,
+                      Ly = 1kilometers, 
+                      Lz = 8,
+                      horizontal_res = 256,
+                      vertical_res = 1,
+                      forest_radius = 100,
+                      smoothing_distance = 16.6194891666667,
+                      forest_density = 0.5, # 1/m²
+                      node_density = 1, # one kelp per grid node
+                      number_nodes = 2,
+                      segment_unstretched_length = [7.8, 4.0],
+                      parameters = (k = 1.91 * 10 ^ 7, 
+                                    α = 1.41, 
+                                    ρₒ = 1026.0, 
+                                    ρₐ = 1.225, 
+                                    g = 9.81, 
+                                    Cᵈˢ = 1.0, 
+                                    Cᵈᵇ= 0.87395175, 
+                                    Cᵃ = 3.0,
+                                    n_nodes = number_nodes,
+                                    τ = 1.0,
+                                    kᵈ = 500),
+                      initial_blade_areas = 3.0 .* [0.8, 0.2],
+                      Aᵤ = 0.103650,
+                      Aᵥ = 0.0)
 
-# I think this ω gives a period of 1 day but it should be 12 hours?
-u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.15, Aᵥ = 0.05, ϕᵤ = -π/2, ϕᵥ = -π, t_central = 0, ω = 1.41e-4)), 
-             drag_set.u)
+    Nx, Ny, Nz = (Lx, Ly) .* horizontal_res ./ 1kilometer, Lz * vertical_res
+    grid = RectilinearGrid(arch, FT;
+                           size=(Nx, Ny, Nz), 
+                           extent=(Lx, Ly, Lz), 
+                           topology=(Periodic, Bounded, Bounded))
 
-v_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = 0.05, Aᵥ = 0.15, ϕᵤ = -π, ϕᵥ = -π/2, t_central = 0, ω = 1.41e-4)),
-             drag_set.v)
+    xs = Vector{FT}()
+    ys = Vector{FT}()
+    sf = Vector{FT}()
 
-w_forcing = drag_set.w
+    grid_density = forest_density * (Lx / Nx * Ly / Ny)
+    base_scaling = node_density * grid_density
 
-u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
-v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
-w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
-
-model = NonhydrostaticModel(; grid,
-                              timestepper = :RungeKutta3,
-                              closure = AnisotropicMinimumDissipation(),
-                              forcing = (u = u_forcing, v = v_forcing, w = w_forcing),
-                              boundary_conditions = (u = u_bcs, v = v_bcs, w = w_bcs),
-                              particles = kelps, 
-                              tracers = (:U, :O)) #takeUp, Outputted
-
-uᵢ(x, y, z) = 0.15 * cos(π/2) + 0.15 * (rand() - 0.5) * 2 * 0.01
-vᵢ(x, y, z) = 0.05 * cos(π) * (1 + (rand() - 0.5) * 2 * 0.01)
-
-set!(model, u = uᵢ, v = vᵢ, U = 10)
-
-Δt₀ = 0.5
-# initialise kelp positions_ijk
-kelp_dynamics!(kelps, model, Δt₀)
-
-filepath = "forest_tracers"
-
-simulation = Simulation(model, Δt = Δt₀, stop_time = 1year)
-
-simulation.callbacks[:update_drag_fields] = Callback(drag_set; callsite = TendencyCallsite())
-simulation.callbacks[:tracer_exchange] = Callback(tracer_exchange; callsite = TendencyCallsite())
-
-
-wizard = TimeStepWizard(cfl = 0.8, max_change = 1.1, min_change = 0.8)
-simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
-
-progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = %.1e ms⁻¹, min(|u|) = %.1e ms⁻¹, wall time: %s, min(|U|) = %.1e , max(|O|) = %.1e \n",
-                                 iteration(sim), prettytime(sim), prettytime(sim.Δt),
-                                 maximum(abs, sim.model.velocities.u), minimum(abs, sim.model.velocities.u), prettytime(sim.run_wall_time),
-                                 minimum(sim.model.tracers.U), maximum(sim.model.tracers.O))
-    
-simulation.callbacks[:progress] = Callback(progress_message, TimeInterval(5minute))
-
-simulation.output_writers[:profiles] =
-    JLD2OutputWriter(model, merge(model.velocities, model.tracers),
-                         filename = "$filepath.jld2",
-                         schedule = TimeInterval(5minute),
-                         overwrite_existing = true)
-
-function store_particles!(sim)
-    jldopen("$(filepath)_particles.jld2", "a+") do file
-        file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.positions
+    for x in xnodes(Center, grid)[1:node_density:end], y in ynodes(Center, grid)[1:node_density:end]
+        r = sqrt((x - Lx/2)^2 + (y - Ly/2)^2)
+        if r < forest_radius
+            scalefactor = base_scaling * (tanh((r + forest_radius * 0.9) / smoothing_distance) - tanh((r - forest_radius * 0.9) / smoothing_distance))/2
+            push!(xs, x)
+            push!(ys, y)
+            push!(sf, scalefactor)
+        end
     end
+
+    kelps = GiantKelp(; grid, 
+                        number_nodes, 
+                        segment_unstretched_length, 
+                        base_x = xs, base_y = ys, base_z = -8.0 * ones(length(xs)), 
+                        initial_blade_areas,
+                        scalefactor = sf, 
+                        architecture = arch, 
+                        max_Δt = 0.6,
+                        drag_fields = false,
+                        parameters,
+                        initial_stretch = 1.0)
+
+    drag_set = DiscreteDragSet(; grid)
+    tracer_exchange = TracerExchange(kelps, 10.0, 0.1)
+
+
+    u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = Aᵤ, Aᵥ = Aᵥ, ϕᵤ = -π/2, ϕᵥ = -π, t_central = 0, ω = 1.41e-4)), 
+                drag_set.u)
+
+    v_forcing = drag_set.v
+
+    w_forcing = drag_set.w
+
+    u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
+    v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
+    w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
+
+    model = NonhydrostaticModel(; grid,
+                                timestepper = :RungeKutta3,
+                                advection = UpwindBiasedThirdOrder(),
+                                closure = AnisotropicMinimumDissipation(),
+                                forcing = (u = u_forcing, v = v_forcing, w = w_forcing),
+                                boundary_conditions = (u = u_bcs, v = v_bcs, w = w_bcs),
+                                particles = kelps, 
+                                tracers = (:U, :O)) #takeUp, Outputted
+
+    uᵢ(x, y, z) = Aᵤ * cos(π/2) + Aᵤ * (rand() - 0.5) * 2 * 0.01
+
+    set!(model, u = uᵢ, U = 10)
+
+    Δt₀ = 0.5
+    # initialise kelp positions_ijk
+    kelp_dynamics!(kelps, model, Δt₀)
+
+    simulation = Simulation(model, Δt = Δt₀, stop_time = 1year)
+
+    simulation.callbacks[:update_drag_fields] = Callback(drag_set; callsite = TendencyCallsite())
+    simulation.callbacks[:tracer_exchange] = Callback(tracer_exchange; callsite = TendencyCallsite())
+
+    return simulation
 end
-
-#simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(5minute))
-
-#simulation.output_writers[:checkpointer] = Checkpointer(model, schedule = TimeInterval(1hour), overwrite_existing = true)
-
-simulation.stop_time = 2.5 * 2π / 1.41e-4
-
-run!(simulation, pickup = false)
-
-#=
-file = jldopen("$(filepath)_particles.jld2")
-times = keys(file["x⃗"])
-x⃗ = zeros(length(times), 8, 3)
-for (i, t) in enumerate(times)
-    x⃗[i, :, :] = file["x⃗/$t"][1].x⃗
-end
-close(file)
-u = FieldTimeSeries("$filepath.jld2", "u") .- u₀;
-
-using CairoMakie
-
-gx = [Lx/Nx:Lx/Nx:Lx;]
-gy = [Lx/Nx:Lx/Nx:Ly;]
-gz = [-Lz:Lx/Nx:Lx/Nx;]
-
-fig = Figure(resolution = (2000, 2000/(Lx/Lz)))
-ax  = Axis(fig[1, 1]; xlabel="x (m)", ylabel="z (m)", title="t=$(prettytime(0))", limits=(0, Lx, -Lz, 0))
-
-# animation settings
-nframes = length(times)
-framerate = floor(Int, nframes/30)
-frame_iterator = 1:nframes
-
-n = Observable(1)
-x = @lift (x⃗ .+ 5.0)[$n, :, 1]
-y = @lift (x⃗ .+ 2.0)[$n, :, 2]
-z = @lift (x⃗ .- 8.0)[$n, :, 3]
-
-
-u_plt = @lift u[1:Nx, floor(Int, Ny/2), 1:Nz, $n]
-uₘ = maximum(abs, u[1:Nx, floor(Int, Ny/2), 1:Nz, :])
-hmu = heatmap!(ax, gx, gz, u_plt, colormap=:vik, colorrange=(-uₘ, uₘ))
-Colorbar(fig[1, 2], hmu)
-plot!(ax, x, z)
-for i=1:8
-    lines!(ax, x⃗[:, i, 1].+5.0, x⃗[:, i, 3].-8.0)
-end
-CairoMakie.record(fig, "$(filepath)_vertical_slice.mp4", frame_iterator; framerate = framerate) do i
-    print("$i" * " \r")
-    n[] = i
-    ax.title = "t=$(prettytime(parse(FT, times[i])))"
-end
-
-
-n = Observable(1)
-fig = Figure(resolution = (2000, 2000/(.5*Lx/Ly)))
-ax_u  = Axis(fig[1, 1]; xlabel="x (m)", ylabel="y (m)")
-x = @lift (x⃗.+5)[$n, :, 1]
-y = @lift (x⃗.+2)[$n, :, 2]
-z = @lift (x⃗.-8)[$n, :, 3]
-colors = lift(getcol, z)
-u_plt = @lift u[1:Nx, 1:Ny, Nz, $n]
-
-uₘ = maximum(abs, u[1:Nx, 1:Ny, Nz, :])
-hmu = heatmap!(ax_u, gx, gy, u_plt, colormap=:vik, colorrange=(-uₘ, uₘ))
-Colorbar(fig[1, 2], hmu)
-
-plot!(ax_u, x, y, color=colors)
-CairoMakie.record(fig, "$(filepath)_horizontal_u.mp4", frame_iterator; framerate = framerate) do i
-    n[] = i
-    msg = string("Plotting frame ", i, " of ", nframes)
-    print(msg * " \r")
-    ax_u.title = "t=$(prettytime(parse(FT, times[i])))"
-end
-
-fig = Figure()
-
-z_xy = zeros(FT, Nx, Ny)
-y_xz = ones(FT, Nx, Nz).*2
-x_yz = zeros(FT, Ny, Nz)
-
-ax = Axis3(fig[1, 1], aspect=(1, .5*Ly/Lx, Lz/Lx), limits=(0, Lx, Ly/2, Ly, -Lz, 0))
-
-u_plt_top = @lift u[1:Nx, 16:Ny, Nz, $n]
-sl1 = surface!(ax, gx, gy, z_xy; color=u_plt_top, colormap=:vik, colorrange=(0.0, 2.0))
-
-u_plt_west = @lift u[1, 16:Ny, 1:Nz, $n]
-sl2 = surface!(ax, x_yz, gy[16:end], gz; color=u_plt_west, colormap=:vik, colorrange=(0.0, 2.0))
-
-u_plt_center = @lift u[1:Nx, 16, 1:Nz, $n]
-sl3 = surface!(ax, gx, y_xz, gz; color=u_plt_center, colormap=:vik, colorrange=(0.0, 2.0))
-
-x = @lift (x⃗.+5)[$n, :, 1]
-y = @lift (x⃗.+2)[$n, :, 2]
-z = @lift (x⃗.-8)[$n, :, 3]
-
-plot!(ax, x, y, z)
-GLMakie.record(fig, "$(filepath)_3d_plot.mp4", frame_iterator; framerate = framerate) do i
-    n[] = i
-    msg = string("Plotting frame ", i, " of ", nframes)
-    print(msg * " \r")
-    ax.title = "t=$(prettytime(parse(FT, times[i])))"
-end
-=#
-
-using EasyFit
-
-u₁ = u[76, 128, Nz, :]
-u₃ = u[110, 128, Nz, :]
-
-u₁_pos = u₁[u₁ .>= 0]
-u₁_neg = u₁[u₁ .< 0]
-
-u₃_pos = u₃[u₁ .>= 0]
-u₃_neg = u₃[u₁ .< 0]
-
-u₁³_pos = fitlinear(u₁_pos, u₃_pos)
-u₁³_neg = fitlinear(u₁_neg, u₃_neg)
-
-fig = Figure(resolution = (1600, 1600))
-ax = Axis(fig[1, 1])
-
-scatter!(ax, u₁, u₃)
-umax = max(maximum(abs, u₁), maximum(abs, u₃))
-lines!(ax, [-umax, umax], [-umax, umax], color=:black, linestyle=:dot)
-lines!(ax, u₁³_pos.x, u₁³_pos.y, color=:black, label = "$(u₁³_pos.b) + $(u₁³_pos.a) x, r² = $(u₁³_pos.R^2)")
-lines!(ax, u₁³_neg.x, u₁³_neg.y, color=:black, label = "$(u₁³_neg.b) + $(u₁³_neg.a) x, r² = $(u₁³_neg.R^2)")
-axislegend(ax, position = :lt)
-
-save("$(filepath)_west.png", fig)
-
-u₁₃ = u[180, 128, Nz, :]
-u₁₁ = u[148, 128, Nz, :]
-
-u₁₃_pos = u₁₃[u₁₃ .>= 0]
-u₁₃_neg = u₁₃[u₁₃ .< 0]
-
-u₁₁_pos = u₁₁[u₁₃ .>= 0]
-u₁₁_neg = u₁₁[u₁₃ .< 0]
-
-u₁₃¹¹_pos = fitlinear(u₁₃_pos, u₁₁_pos)
-u₁₃¹¹_neg = fitlinear(u₁₃_neg, u₁₁_neg)
-
-fig = Figure(resolution = (1600, 1600))
-ax = Axis(fig[1, 1])
-
-scatter!(ax, u₁₃, u₁₁)
-umax = max(maximum(abs, u₁₃), maximum(abs, u₁₁))
-lines!(ax, [-umax, umax], [-umax, umax], color=:black, linestyle=:dot)
-lines!(ax, u₁₃¹¹_pos.x, u₁₃¹¹_pos.y, color=:black, label = "$(u₁₃¹¹_pos.b) + $(u₁₃¹¹_pos.a) x, r² = $(u₁₃¹¹_pos.R^2)")
-lines!(ax, u₁₃¹¹_neg.x, u₁₃¹¹_neg.y, color=:black, label = "$(u₁₃¹¹_neg.b) + $(u₁₃¹¹_neg.a) x, r² = $(u₁₃¹¹_neg.R^2)")
-axislegend(ax, position = :lt)
-
-save("$(filepath)_east.png", fig)
-
-return "$(filepath)_west.png", "$(filepath)_east.png"
