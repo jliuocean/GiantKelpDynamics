@@ -62,7 +62,7 @@ end
     l = sqrt(dot(Δx⃗, Δx⃗))
     Vᵖ = @inbounds pneumatocyst_volumes[p][n]
 
-    Fᴮ = @inbounds 5 * Vᵖ * [0.0, 0.0, params.g] #currently assuming kelp is nutrally buoyant except for pneumatocysts
+    Fᴮ = @inbounds 10 * Vᵖ * [0.0, 0.0, params.g] #currently assuming kelp is nutrally buoyant except for pneumatocysts
 
     if @inbounds Fᴮ[3] > 0 && z >= 0  # i.e. floating up not sinking, and outside of the surface
         @inbounds Fᴮ[3] = 0.0
