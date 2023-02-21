@@ -124,18 +124,27 @@ adapt_structure(to, kelp::GiantKelp) = GiantKelp(kelp.x, kelp.y, kelp.z,
 @inline no_smoothing(r, rᵉ) = 1.0
 @inline nothingfunc(args...) = nothing
 
+function segment_area_fraction(lengths)
+    fractional_length = cumsum(lengths) ./ sum(lengths)
+
+    # Jackson et al. 1985
+    cumulative_areas = -0.08 .+ 3.3 .* fractional_length .- 4.1 .* fractional_length .^ 2 .+ 1.9 .* fractional_length .^ 3
+
+    return cumulative_areas .- [0.0, cumulative_areas[1:end-1]...]
+end
+
 function GiantKelp(; grid, base_x::Vector{FT}, base_y, base_z,
                       number_kelp = length(base_x),
                       scalefactor = ones(length(base_x)),
                       number_nodes = 8,
                       depth = 8.0,
                       segment_unstretched_length = 0.6,
+                      initial_stretch = 1.5,
                       initial_stipe_radii = 0.004,
-                      initial_blade_areas = 0.2 .* [i*20/number_nodes for i in 1:number_nodes],
-                      initial_pneumatocyst_volume = 0.05 * ones(number_nodes),
+                      initial_blade_areas = 3.0 * ifelse(isa(segment_unstretched_length, Number), ones(number_nodes) ./ number_nodes, segment_area_fraction(segment_unstretched_length)),
+                      initial_pneumatocyst_volume = (2.5 / (5 * 9.81)) .* ifelse(isa(segment_unstretched_length, Number), 1 / number_nodes .* ones(number_nodes), segment_unstretched_length ./ sum(segment_unstretched_length)),
                       initial_effective_radii = 0.5 * ones(number_nodes),
                       initial_node_positions = nothing,
-                      initial_stretch = 1.5,
                       architecture = CPU(),
                       parameters = (k = 1.91 * 10 ^ 7, 
                                     α = 1.41, 

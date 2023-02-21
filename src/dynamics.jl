@@ -62,7 +62,7 @@ end
     l = sqrt(dot(Δx⃗, Δx⃗))
     Vᵖ = @inbounds pneumatocyst_volumes[p][n]
 
-    Fᴮ = @inbounds 10 * Vᵖ * [0.0, 0.0, params.g] #currently assuming kelp is nutrally buoyant except for pneumatocysts
+    Fᴮ = @inbounds 5 * Vᵖ * [0.0, 0.0, params.g] #currently assuming kelp is nutrally buoyant except for pneumatocysts
 
     if @inbounds Fᴮ[3] > 0 && z >= 0  # i.e. floating up not sinking, and outside of the surface
         @inbounds Fᴮ[3] = 0.0
@@ -70,15 +70,15 @@ end
 
     Aᵇ = @inbounds blade_areas[p][n]
     rˢ = @inbounds stipe_radii[p][n]
-    Vᵐ = π * rˢ ^ 2 * l + Aᵇ * 0.01 # TODO: change thickness to some realistic thing
+    Vᵐ = π * rˢ ^ 2 * l + Aᵇ * 0.01
     mᵉ = (Vᵐ + params.Cᵃ * (Vᵐ + Vᵖ)) * params.ρₒ + Vᵖ * (params.ρₒ - 500) 
 
     # we need ijk and this also reduces repetition of finding ijk
     i, j, k = fractional_indices(x, y, z, (Center(), Center(), Center()), water_velocities.u.grid)
     
-    ξ, i = modf(i)
-    η, j = modf(j)
-    ζ, k = modf(k)
+    _, i = modf(i)
+    _, j = modf(j)
+    _, k = modf(k)
 
     i = Int(i + 1)
     j = Int(j + 1)
@@ -86,7 +86,7 @@ end
 
     @inbounds positions_ijk[p][n, :] = [i, j, k]
 
-    ζ_base, k_base = @inbounds n == 1 ? (0.0, 1) : modf(1 +  fractional_z_index(positions[p][n - 1, 3] + z_base[p], Center(), water_velocities.u.grid)) # benchmarked and this is faster than ifelseing it
+    _, k_base = @inbounds n == 1 ? (0.0, 1) : modf(1 +  fractional_z_index(positions[p][n - 1, 3] + z_base[p], Center(), water_velocities.u.grid)) # benchmarked and this is faster than ifelseing it
 
     k_base = Int(k_base)
 
