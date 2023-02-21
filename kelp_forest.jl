@@ -41,6 +41,7 @@ function setup_forest(arch ;
                                     τ = 1.0,
                                     kᵈ = 500),
                       initial_blade_areas = 3.0 .* [0.8, 0.2],
+                      initial_pneumatocyst_volume = (2.5 / (5 * 9.81)) .* ifelse(isa(segment_unstretched_length, Number), 1 / number_nodes .* ones(number_nodes), segment_unstretched_length ./ sum(segment_unstretched_length)),
                       Aᵤ = 0.103650,
                       Aᵥ = 0.0)
 
@@ -79,7 +80,8 @@ function setup_forest(arch ;
                         max_Δt = 0.6,
                         drag_fields = false,
                         parameters,
-                        initial_stretch = 1.0)
+                        initial_stretch = 1.0,
+                        initial_pneumatocyst_volume)
 
     drag_set = DiscreteDragSet(; grid)
     tracer_exchange = TracerExchange(kelps, 10.0, 0.1)
