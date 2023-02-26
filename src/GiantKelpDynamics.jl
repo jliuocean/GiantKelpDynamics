@@ -239,4 +239,5 @@ include("dynamics.jl")
 include("full_drag.jl")
 include("fast_drag.jl")
 include("tracer_exchange.jl")
+include("forest.jl")
 end # module
