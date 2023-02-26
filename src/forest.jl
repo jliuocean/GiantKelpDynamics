@@ -92,11 +92,11 @@ function setup_forest(; arch = Oceananigans.CPU(),
                                 forcing = (u = u_forcing, v = v_forcing, w = w_forcing),
                                 boundary_conditions = (u = u_bcs, v = v_bcs, w = w_bcs),
                                 particles = kelps, 
-                                tracers = (:U, :O)) #takeUp, Outputted
+                                tracers = :O)
 
     uᵢ(x, y, z) = Aᵤ * cos(π/2) + Aᵤ * (rand() - 0.5) * 2 * 0.01
 
-    set!(model, u = uᵢ, U = 10)
+    set!(model, u = uᵢ)
 
     Δt₀ = 0.5
     # initialise kelp positions_ijk
