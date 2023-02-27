@@ -21,7 +21,7 @@ function (exchange::TracerExchange)(model)
 
             total_scaling = sf / vertical_spread
 
-            O[i, j, k_base:k] = O[i, j, k_base:k] .- (total_scaling / exchange.uptake_timescale) .* (O[i, j, k_base:k] .- base_value)
+            O[i, j, k_base:k] = O[i, j, k_base:k] .- (total_scaling / exchange.uptake_timescale) .* (O[i, j, k_base:k] .- exchange.base_value)
 
             k_base = k
         end
