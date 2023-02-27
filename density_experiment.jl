@@ -28,10 +28,10 @@ simulation = GiantKelpDynamics.setup_forest(; arch,
 wizard = TimeStepWizard(cfl = 0.8, max_change = 1.1, min_change = 0.8)
 simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
 
-progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = %1.1e ms⁻¹, min(|u|) = %.1e ms⁻¹, wall time: %s, min(|U|) = %.1e , max(|O|) = %.1e \n",
+progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = %1.1e ms⁻¹, min(|u|) = %.1e ms⁻¹, wall time: %s, max(|O|) = %.1e \n",
                                 iteration(sim), prettytime(sim), prettytime(sim.Δt),
                                 maximum(abs, sim.model.velocities.u), minimum(abs, sim.model.velocities.u), prettytime(sim.run_wall_time),
-                                minimum(sim.model.tracers.U), maximum(sim.model.tracers.O))
+                                maximum(sim.model.tracers.O))
     
 
 simulation.callbacks[:progress] = Callback(progress_message, TimeInterval(5minute))

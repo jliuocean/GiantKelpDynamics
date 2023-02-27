@@ -71,7 +71,7 @@ function setup_forest(; arch = Oceananigans.CPU(),
                         initial_pneumatocyst_volume)
 
     drag_set = DiscreteDragSet(; grid)
-    tracer_exchange = TracerExchange(kelps, 10.0, 0.1)
+    tracer_exchange = TracerExchange(kelps, 1hour, 1.0)
 
 
     u_forcing = (Forcing(tidal_forcing, parameters = (Aᵤ = Aᵤ, Aᵥ = Aᵥ, ϕᵤ = -π/2, ϕᵥ = -π, t_central = 0, ω = 1.41e-4)), 
