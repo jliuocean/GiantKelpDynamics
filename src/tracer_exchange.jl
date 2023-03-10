@@ -21,7 +21,9 @@ function (exchange::TracerExchange)(model)
 
             total_scaling = sf / vertical_spread
 
-            O[i, j, k_base:k] = O[i, j, k_base:k] .- (total_scaling / exchange.uptake_timescale) .* (O[i, j, k_base:k] .- exchange.base_value)
+            for kidx in k_base:k
+                model.timestepper.Gⁿ.O[i, j, kidx] -= (total_scaling / exchange.uptake_timescale) .* (O[i, j, kidx] .- exchange.base_value)
+            end
 
             k_base = k
         end
