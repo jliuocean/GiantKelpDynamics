@@ -172,7 +172,7 @@ function kelp_dynamics!(particles, model, Δt)
     n_substeps = max(1, floor(Int, Δt / (particles.parameters.max_Δt)))
 
     water_accelerations = @inbounds model.timestepper.Gⁿ[(:u, :v, :w)]
-    for substep in 1:n_substeps        
+    for _ in 1:n_substeps        
         for stage in stages(particles.parameters.timestepper)
             step_event = step_kernel!(particles.properties.x, 
                                       particles.properties.y, 
