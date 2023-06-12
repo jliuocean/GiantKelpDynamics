@@ -5,6 +5,7 @@ using Oceananigans.Grids: xnodes, ynodes
 using Oceananigans.Architectures: arch_array
 
 using GiantKelpDynamics
+using GiantKelpDynamics: segment_area_fraction
 
 arch = CUDA.has_cuda_gpu() ? Oceananigans.GPU() : Oceananigans.CPU()
 FT = CUDA.has_cuda_gpu() ? Float32 : Float64
@@ -40,7 +41,7 @@ function setup_forest(arch ;
                                     n_nodes = number_nodes,
                                     τ = 1.0,
                                     kᵈ = 500),
-                      initial_blade_areas = 3.0 .* [0.8, 0.2],
+                      initial_blade_areas = 3.0 * ifelse(isa(segment_unstretched_length, Number), ones(number_nodes) ./ number_nodes, segment_area_fraction(segment_unstretched_length)),
                       initial_pneumatocyst_volume = (2.5 / (5 * 9.81)) .* ifelse(isa(segment_unstretched_length, Number), 1 / number_nodes .* ones(number_nodes), segment_unstretched_length ./ sum(segment_unstretched_length)),
                       Aᵤ = 0.103650,
                       Aᵥ = 0.0)
@@ -77,7 +78,7 @@ function setup_forest(arch ;
                         initial_blade_areas,
                         scalefactor = sf, 
                         architecture = arch, 
-                        max_Δt = 0.6,
+                        max_Δt = 0.4,
                         drag_fields = false,
                         parameters,
                         initial_stretch = 1.0,

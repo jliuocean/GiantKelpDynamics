@@ -8,21 +8,19 @@ arch = CUDA.has_cuda_gpu() ? Oceananigans.GPU() : Oceananigans.CPU()
 
 # ## Setup grid 
 Lx, Ly, Lz = 32, 4, 8
-Nx, Ny, Nz = 4 .* (Lx, Ly, Lz)
+Nx, Ny, Nz = 8 .* (Lx, Ly, Lz)
 grid = RectilinearGrid(arch; size=(Nx, Ny, Nz), extent=(Lx, Ly, Lz), topology=(Periodic, Periodic, Bounded))
 
 # ## Setup kelp particles
 
-kelps = GiantKelp(;grid, base_x = [5.0], base_y = [2.0], base_z = [-8.0], architecture = arch, max_Δt = Inf, timestepper = GiantKelpDynamics.Euler())
+kelps = GiantKelp(; grid, base_x = [5.0], base_y = [2.0], base_z = [-8.0], max_Δt = 0.1, initial_stretch = 2.0, direction = 1)
 
-u₀ = 0.2
+u₀ = 0.3
 
 u_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 v_bcs = FieldBoundaryConditions(bottom = ValueBoundaryCondition(0.0))
 w_bcs = FieldBoundaryConditions(bottom = OpenBoundaryCondition(0.0))
 
-#u_forcing_func(args...) = 1e-5
-#u_forcing = Forcing(u_forcing_func, discrete_form=true)
 @inline mask_rel_U(x, y, z) = ifelse(x < 3, 1, 0)
 @inline relax_U(x, y, z, t, u, params) = 10 * mask_rel_U(x, y, z) * (params.u₀*(1 + 0.01*rand()) - u)
 U_forcing = Forcing(relax_U, field_dependencies = (:u, ), parameters = (; u₀))
@@ -36,28 +34,28 @@ V_forcing = Forcing(relax_V, field_dependencies = (:v, ))
 W_forcing = Forcing(relax_W, field_dependencies = (:w, ))
 
 @inline N_background(x, y, z, t) = tanh(-2 * z / 8)
-#N_relax = Relaxation(; rate = 1/10, target = N_background)
+
 mask_N(x, y, z) = ifelse(x < 3, 1, 0)
 @inline relax_N(x, y, z, t, N) = 1 * mask_N(x, y, z) * (N_background(x, y, z, t) - N)
 N_forcing = Forcing(relax_N, field_dependencies = (:N, ))
 
 model = NonhydrostaticModel(; grid,
-                              advection = WENO(grid),
+                              advection = UpwindBiasedFifthOrder(grid),
                               timestepper = :RungeKutta3,
-                              closure = ScalarDiffusivity(κ = 1e-4, ν = 1e-4),
+                              closure = ScalarDiffusivity(ν = 1e-1, κ = 1e-1),
                               boundary_conditions = (u=u_bcs, v=v_bcs, w=w_bcs),
-                              forcing = (u = U_forcing, N = N_forcing),#v = V_forcing, w = W_forcing, N = N_forcing),
+                              forcing = (u = U_forcing, v = V_forcing, w = W_forcing, N = N_forcing),
                               particles = kelps,
                               tracers = :N)
 
-uᵢ(x, y, z) = u₀*(1 + randn()*0.01)
-vᵢ(x, y, z) = u₀*randn()*0.1
+uᵢ(x, y, z) = u₀ * (1 + randn() * 0.01)
+vᵢ(x, y, z) = u₀ * randn()*0.1
 Nᵢ(x, y, z) = N_background(x, y, z, 0.0)
 set!(model, u=uᵢ, v=vᵢ, w=vᵢ, N=Nᵢ)
 
-filepath = "new_formulation_low_res"
+filepath = "pres"
 
-simulation = Simulation(model, Δt=0.2, stop_time=3minute)
+simulation = Simulation(model, Δt=1.0, stop_time=5minute)
 
 #simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
 
@@ -82,13 +80,12 @@ function store_particles!(sim)
         file["x⃗/$(sim.model.clock.time)"] = sim.model.particles.properties.positions
     end
 end
-simulation.output_writers[:checkpointer] = Checkpointer(model, schedule=TimeInterval(5), prefix="checkpoint")
+
 simulation.callbacks[:save_particles] = Callback(store_particles!, TimeInterval(1))
-simulation.callbacks[:drag_water] = Callback(drag_water!; callsite = TendencyCallsite())
+simulation.callbacks[:drag_water] = Callback(fully_resolved_drag!; callsite = TendencyCallsite())
 
 # transient response to the kelp starting to move 
 
-simulation.stop_time = 3minutes
 simulation.Δt = 0.1
 run!(simulation)
 

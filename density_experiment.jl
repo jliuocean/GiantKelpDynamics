@@ -6,7 +6,8 @@ using GiantKelpDynamics: segment_area_fraction
 output_dir = joinpath(@__DIR__, ARGS[1])
 member = parse(Int64, ARGS[2])
 
-@load "density_experiment.jld2" density
+#@load "$(output_dir).jld2" density
+@load "final_densities.jld2" density
 
 forest_density = density[member]
 
@@ -25,22 +26,35 @@ simulation = GiantKelpDynamics.setup_forest(; arch,
 
 @info "setup forest"
 
-wizard = TimeStepWizard(cfl = 0.8, max_change = 1.1, min_change = 0.8)
+wizard = TimeStepWizard(cfl = 0.7, max_change = 2.0, min_change = 0.5)
 simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(10))
 
-progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s, max(|u|) = %1.1e ms⁻¹, min(|u|) = %.1e ms⁻¹, wall time: %s, max(|O|) = %.1e \n",
-                                iteration(sim), prettytime(sim), prettytime(sim.Δt),
-                                maximum(abs, sim.model.velocities.u), minimum(abs, sim.model.velocities.u), prettytime(sim.run_wall_time),
-                                maximum(sim.model.tracers.O))
+@inline progress_message(sim) = @printf("Iteration: %07d, time: %s, Δt: %s\n",
+                                        iteration(sim), prettytime(sim), prettytime(sim.Δt))
     
 
-simulation.callbacks[:progress] = Callback(progress_message, TimeInterval(5minute))
+simulation.callbacks[:progress] = Callback(progress_message, IterationInterval(10))
 
 simulation.output_writers[:profiles] =
     JLD2OutputWriter(simulation.model, merge(simulation.model.velocities, simulation.model.tracers),
-                     filename = "fix_subduction.jld2",
+                     filename = "$(output_dir)/$member.jld2",
                      schedule = TimeInterval(30minute),
                      overwrite_existing = true)
+
+rm("$(member)_particles.jld2")
+
+jldopen("$(member)_particles.jld2", "a+") do file
+    file["base_position/x"] = simulation.model.particles.properties.x
+    file["base_position/y"] = simulation.model.particles.properties.y
+end          
+
+@inline function store_particles!(simulation)
+    jldopen("$(member)_particles.jld2", "a+") do file
+        file["node_positions/$(simulation.model.clock.time)"] = simulation.model.particles.properties.positions
+    end
+end
+
+simulation.callbacks[:particles] = Callback(store_particles!, TimeInterval(30minute))
 
 simulation.stop_time = 2.5 * 2π / 1.41e-4
 
