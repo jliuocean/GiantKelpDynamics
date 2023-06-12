@@ -6,7 +6,6 @@ using GiantKelpDynamics: segment_area_fraction
 output_dir = joinpath(@__DIR__, ARGS[1])
 member = parse(Int64, ARGS[2])
 
-#@load "$(output_dir).jld2" density
 @load "final_densities.jld2" density
 
 forest_density = density[member]
