@@ -19,7 +19,7 @@ function (exchange::TracerExchange)(model)
             i, j, k = properties.positions_ijk[p][n, :]
             vertical_spread = max(1, k - k_base  + 1)
 
-            total_scaling = sf / vertical_spread
+            total_scaling = sf / vertical_spread / parameters.n_nodes
 
             for kidx in k_base:k
                 model.timestepper.Gⁿ.O[i, j, kidx] -= (total_scaling / exchange.uptake_timescale) .* (O[i, j, kidx] .- exchange.base_value)
