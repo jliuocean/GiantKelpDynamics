@@ -1,3 +1,0 @@
-# `truth.jld2`
-
-The truth values for calibration are derived from the observations of Gaylord, Brian, Rosman, Johanna H., Reed, Daniel C., Koseff, Jeffrey R., Fram, Jonathan, MacIntyre, Sally, Arkema, Katie, McDonald, Cameron, Brzezinski, Mark A., Largier, John L., Monismith, Stephen G., Raimondi, Peter T., Mardian, Brent, (2007), Spatial patterns of flow and their modification within and around a giant kelp forest, Limnology and Oceanography, 52, doi: 10.4319/lo.2007.52.5.1838. 
