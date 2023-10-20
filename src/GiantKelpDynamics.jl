@@ -148,11 +148,7 @@ function GiantKelp(; grid,
     positions_ijk = [arch_array(arch, ones(Int, number_nodes, 3)) for p in 1:number_kelp]
 
 
-    if segment_unstretched_length isa Number
-        relaxed_lengths = [arch_array(arch, ones(number_nodes) .* segment_unstretched_length) for p in 1:number_kelp]
-    else
-        relaxed_lengths = [arch_array(arch, segment_unstretched_length) for p in 1:number_kelp]
-    end
+    relaxed_lengths = [arch_array(arch, ones(number_nodes) .* segment_unstretched_length) for p in 1:number_kelp]
     stipe_radii = [arch_array(arch, ones(number_nodes) .* initial_stipe_radii) for p in 1:number_kelp]
     blade_areas = [arch_array(arch, ones(number_nodes) .* initial_blade_areas) for p in 1:number_kelp]
     pneumatocyst_volumes = [arch_array(arch, ones(number_nodes) .* initial_pneumatocyst_volume) for p in 1:number_kelp]
