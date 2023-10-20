@@ -1,5 +1,5 @@
 # Giant kelp (_Macrocystis pyrifera_) dynamics model
-This repository contains the code for numerically integrating the motion of giant kelp coupled with solving the flow around the plants using [`Oceananigans.jl`](https://github.com/CliMA/Oceananigans.jl/). 
+This repository contains the code for numerically integrating the motion of giant kelp coupled with solving the flow around the plants using [`Oceananigans.jl`](https://github.com/CliMA/Oceananigans.jl/). We would encourage you to use the newer version.
 
 This repository supports our paper ["A model of tidal flow and tracer release in a giant kelp forest"](comming.soon) which contains details of the model and implimentation.
 
