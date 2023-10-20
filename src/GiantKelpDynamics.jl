@@ -1,6 +1,6 @@
 module GiantKelpDynamics
 
-export GiantKelp, NothingBGC
+export GiantKelp, NothingBGC, RK3, Euler
 
 using Adapt, KernelAbstractions
 
@@ -108,7 +108,7 @@ function GiantKelp(; grid,
                      holdfast_x, holdfast_y, holdfast_z,
                      scalefactor = ones(length(holdfast_x)),
                      number_nodes = 8,
-                     segment_unstretched_length = 0.6,
+                     segment_unstretched_length = 3.,
                      initial_stipe_radii = 0.004,
                      initial_blade_areas = 3.0 * (isa(segment_unstretched_length, Number) ? 
                                                     ones(number_nodes) ./ number_nodes :
@@ -128,7 +128,7 @@ function GiantKelp(; grid,
                                              n_nodes = number_nodes,
                                              τ = 5.0,
                                              kᵈ = 500),
-                     timestepper = RK3(),
+                     timestepper = Euler(),
                      max_Δt = Inf,
                      custom_dynamics = nothingfunc)
 
@@ -148,7 +148,11 @@ function GiantKelp(; grid,
     positions_ijk = [arch_array(arch, ones(Int, number_nodes, 3)) for p in 1:number_kelp]
 
 
-    relaxed_lengths = [arch_array(arch, ones(number_nodes) .* segment_unstretched_length) for p in 1:number_kelp]
+    if segment_unstretched_length isa Number
+        relaxed_lengths = [arch_array(arch, ones(number_nodes) .* segment_unstretched_length) for p in 1:number_kelp]
+    else
+        relaxed_lengths = [arch_array(arch, segment_unstretched_length) for p in 1:number_kelp]
+    end
     stipe_radii = [arch_array(arch, ones(number_nodes) .* initial_stipe_radii) for p in 1:number_kelp]
     blade_areas = [arch_array(arch, ones(number_nodes) .* initial_blade_areas) for p in 1:number_kelp]
     pneumatocyst_volumes = [arch_array(arch, ones(number_nodes) .* initial_pneumatocyst_volume) for p in 1:number_kelp]
