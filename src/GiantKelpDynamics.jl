@@ -1,12 +1,13 @@
 module GiantKelpDynamics
 
-export GiantKelp
+export GiantKelp, NothingBGC
 
 using Adapt, KernelAbstractions
 
 using KernelAbstractions.Extras: @unroll
 using OceanBioME.Particles: BiogeochemicalParticles
 using Oceananigans.Architectures: architecture, device
+using Oceananigans.Biogeochemistry: AbstractContinuousFormBiogeochemistry
 using Oceananigans.Fields: Field, CenterField, VelocityFields
 using Oceananigans.Utils: arch_array
 
@@ -231,6 +232,9 @@ function convert_output(output::Union{Vector{<:Matrix}, Vector{<:Vector}}, write
 
     return output_array
 end
+
+# so that we can run with just kelp
+struct NothingBGC <: AbstractContinuousFormBiogeochemistry end
 
 include("timesteppers.jl")
 include("kinematics.jl")
