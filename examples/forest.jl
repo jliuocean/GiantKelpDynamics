@@ -1,4 +1,4 @@
-# # [Single plant](@id single_example)
+# # [Single plant](@id forest_example)
 # In this example we setup a single plant in a narrow periodic channel to help understand the drag of the kelp on the water
 
 # ## Install dependencies
@@ -13,18 +13,18 @@
 using Oceananigans, GiantKelpDynamics, OceanBioME, Oceananigans.Units
 using OceanBioME: Biogeochemistry
 
-grid = RectilinearGrid(size = (64, 32, 8), extent = (1kilometer, 500, 8))
+grid = RectilinearGrid(size = (128, 64, 8), extent = (1kilometer, 500, 8))
 
 xc, yc, zc = nodes(grid, Center(), Center(), Center())
 
-x_spacing = xc[27]:xspacings(grid, Center()):xc[32]
-y_spacing = yc[14]:yspacings(grid, Center()):yc[19]
+x_spacing = xc[27]:xspacings(grid, Center()):xc[38]
+y_spacing = yc[27]:yspacings(grid, Center()):yc[38]
 
 holdfast_x = vec([x for x in x_spacing, y in y_spacing])
 holdfast_y = vec([y for x in x_spacing, y in y_spacing])
 holdfast_z = vec([-8. for x in x_spacing, y in y_spacing])
 
-scalefactor = 0.5 * (xspacings(grid, Center()) * yspacings(grid, Center())) .* ones(length(holdfast_x))
+scalefactor = 1.5 * (xspacings(grid, Center()) * yspacings(grid, Center())) .* ones(length(holdfast_x))
 
 scalefactor = vec([x for x in x_spacing, y in y_spacing])
 
@@ -52,22 +52,26 @@ model = NonhydrostaticModel(; grid,
                               forcing = (; u, v, w),
                               closure = AnisotropicMinimumDissipation())
 
-# Set the initial positions of the plant nodes (relaxed floating to the surface), and the set an initial water velocity
+# Set the initial positions of the plant nodes (relaxed floating to the surface)
+set!(kelp, positions = [0. 0. 8.; 8. 0. 8.])#[13.86 0. 8.; 21.86 0. 8.;])
 
-set!(kelp, positions = [13.86 0. 8.; 21.86 0. 8.;])
+# Sset an initial water velocity with random noise to initial conditions to induce turbulance
+u₀(x, y, z) = 0.05 * (1 + 0.001 * randn())
+v₀(x, y, z) = 0.001 * randn()
 
-set!(model, u = 0.05)
+set!(model, u = u₀, v = v₀, w = v₀)
 
 # Setup the simulaiton to save the flow and kelp positions
-
-simulation = Simulation(model, Δt = 40, stop_time = 2hours)
+simulation = Simulation(model, Δt = 20, stop_time = 4hours)
 
 prog(sim) = @info "Completed $(prettytime(time(simulation))) in $(simulation.model.clock.iteration) steps with Δt = $(prettytime(simulation.Δt))"
-
 simulation.callbacks[:progress] = Callback(prog, IterationInterval(100))
 
-simulation.output_writers[:flow] = JLD2OutputWriter(model, model.velocities, overwrite_existing = true, filename = "single_flow.jld2", schedule = TimeInterval(2minutes))
-simulation.output_writers[:kelp] = JLD2OutputWriter(model, (; positions = kelp.positions), overwrite_existing = true, filename = "single_kelp.jld2", schedule = TimeInterval(2minutes))
+wizard = TimeStepWizard(cfl = 0.5)
+simulation.callbacks[:timestep] = Callback(wizard, IterationInterval(10))
+
+simulation.output_writers[:flow] = JLD2OutputWriter(model, model.velocities, overwrite_existing = true, filename = "forest_flow.jld2", schedule = TimeInterval(2minutes))
+simulation.output_writers[:kelp] = JLD2OutputWriter(model, (; positions = kelp.positions), overwrite_existing = true, filename = "forest_kelp.jld2", schedule = TimeInterval(2minutes))
 
 # Run!
 run!(simulation)
@@ -75,9 +79,9 @@ run!(simulation)
 # Next we load the data
 using CairoMakie, JLD2
 
-u = FieldTimeSeries("single_flow.jld2", "u")
+u = FieldTimeSeries("forest_flow.jld2", "u")
 
-file = jldopen("single_kelp.jld2")
+file = jldopen("forest_kelp.jld2")
 
 iterations = keys(file["timeseries/t"])
 
@@ -103,32 +107,34 @@ y_position_ends = @lift vec([positions[$n][p][2, 2] for (p, y₀) in enumerate(h
 rel_x_position_ends = @lift vec([positions[$n][p][2, 1] - positions[$n][p][1, 1] for (p, x₀) in enumerate(holdfast_x)])
 rel_z_position_ends = @lift vec([positions[$n][p][2, 3] - positions[$n][p][1, 3] for (p, z₀) in enumerate(holdfast_z)])
 
-u_vert = @lift interior(u[$n], :, 16, :)
+u_vert = @lift interior(u[$n], :, Int(grid.Ny/2), :) .- 0.2
 
-u_vert_lims = (minimum(u[:, 16, :, :]), maximum(u[:, 16, :, :]))
+u_surface = @lift interior(u[$n], :, :, grid.Nz) .- 0.2
 
-u_surface = @lift interior(u[$n], :, :, 8)
-
-u_surface_lims = (minimum(u[:, :, 8, :]), maximum(u[:, :, 8, :]))
+u_lims = maximum(abs, u .- 0.2) .* (-1, 1)
 
 xf, yc, zc = nodes(u.grid, Face(), Center(), Center())
 
 fig = Figure(resolution = (1200, 800));
 
-ax = Axis(fig[1:3, 1], aspect = DataAspect())
+title = @lift "t = $(prettytime(u.times[$n]))"
 
-hm = heatmap!(ax, xf, yc, u_surface, colorrange = u_surface_lims)
+ax = Axis(fig[1:3, 1], aspect = DataAspect(); title, ylabel = "y (m)")
+
+hm = heatmap!(ax, xf, yc, u_surface, colorrange = u_lims, colormap = :roma)
 
 arrows!(ax, holdfast_x, holdfast_y, x_position_ends, y_position_ends, color = :black)
 
-ax = Axis(fig[4, 1], limits = (400, 550, -8, 0), aspect = AxisAspect(20))
+ax = Axis(fig[4, 1], limits = (400, 550, -8, 0), aspect = AxisAspect(15), xlabel = "x (m)", ylabel = "z (m)")
 
-hm = heatmap!(ax, xf, zc, u_vert, colorrange = u_vert_lims)
+hm = heatmap!(ax, xf, zc, u_vert, colorrange = u_lims, colormap = :roma)
+
+Colorbar(fig[1:4, 2], hm)
 
 arrows!(ax, holdfast_x, holdfast_z, x_position_first, z_position_first, color = :black)
 arrows!(ax, abs_x_position_first, abs_z_position_first, rel_x_position_ends, rel_z_position_ends, color = :black)
 
-record(fig, "drag.mp4", 1:length(times); framerate = 10) do i; 
+record(fig, "forest.mp4", 1:length(times); framerate = 10) do i; 
     n[] = i
 end
 

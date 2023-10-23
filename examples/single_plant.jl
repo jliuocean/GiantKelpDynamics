@@ -19,13 +19,23 @@ holdfast_x = [20.]
 holdfast_y = [4.]
 holdfast_z = [-8.]
 
+max_Δt = 0.5
+
 kelp = GiantKelp(; grid,
-                    holdfast_x, holdfast_y, holdfast_z)
+                   holdfast_x, holdfast_y, holdfast_z,
+                   max_Δt)
+
+@inline sponge(x, y, z) = ifelse(x < 10, 1, 0)
+
+u = Relaxation(; rate = 1/20, target = 0.2, mask = sponge)
+v = Relaxation(; rate = 1/20, mask = sponge)
+w = Relaxation(; rate = 1/20, mask = sponge)
 
 model = NonhydrostaticModel(; grid, 
                               biogeochemistry = Biogeochemistry(NothingBGC(),
                                                                 particles = kelp),
                               advection = WENO(),
+                              forcing = (; u, v, w),
                               closure = AnisotropicMinimumDissipation())
 
 # Set the initial positions of the plant nodes (relaxed floating to the surface), and the set an initial water velocity
@@ -41,6 +51,9 @@ simulation = Simulation(model, Δt = 0.5, stop_time = 10minutes)
 prog(sim) = @info "Completed $(prettytime(time(simulation))) in $(simulation.model.clock.iteration) steps with Δt = $(prettytime(simulation.Δt))"
 
 simulation.callbacks[:progress] = Callback(prog, IterationInterval(100))
+
+wizard = TimeStepWizard(cfl = 0.5)
+simulation.callbacks[:timestep] = Callback(wizard, IterationInterval(10))
 
 simulation.output_writers[:flow] = JLD2OutputWriter(model, model.velocities, overwrite_existing = true, filename = "single_flow.jld2", schedule = TimeInterval(10))
 simulation.output_writers[:kelp] = JLD2OutputWriter(model, (; positions = kelp.positions), overwrite_existing = true, filename = "single_kelp.jld2", schedule = TimeInterval(10))
@@ -72,33 +85,33 @@ x_position = @lift positions[$n][:, 1] .+ 20
 y_position = @lift positions[$n][:, 2] .+ 4
 z_position = @lift positions[$n][:, 3] .- 8
 
-u_vert = @lift interior(u[$n], :, 16, :)
+u_vert = @lift interior(u[$n], :, Int(grid.Ny / 2), :)
 
-u_vert_lims = (minimum(u[:, 16, :, :]), maximum(u[:, 16, :, :]))
+u_lims = (0, maximum(u[:, 16, :, :]))
 
-u_surface = @lift interior(u[$n], :, :, 8)
-
-u_surface_lims = (minimum(u[:, :, 8, :]), maximum(u[:, :, 8, :]))
+u_surface = @lift interior(u[$n], :, :, grid.Nz)
 
 xf, yc, zc = nodes(u.grid, Face(), Center(), Center())
 
 fig = Figure(resolution = (1200, 400));
 
-ax = Axis(fig[1, 1], aspect = DataAspect())
+title = @lift "t = $(prettytime(u.times[$n]))"
 
-hm = heatmap!(ax, xf, zc, u_vert, colorrange = u_vert_lims)
+ax = Axis(fig[1, 1], aspect = DataAspect(); title, ylabel = "z (m)")
+
+hm = heatmap!(ax, xf, zc, u_vert, colorrange = u_lims)
 
 scatter!(ax, x_position, z_position)
 
-ax = Axis(fig[2, 1], aspect = DataAspect())
+ax = Axis(fig[2, 1], aspect = DataAspect(), xlabel = "x (m)", ylabel = "y (m)")
 
-hm = heatmap!(ax, xf, yc, u_surface, colorrange = u_surface_lims)
+hm = heatmap!(ax, xf, yc, u_surface, colorrange = u_lims)
 
 scatter!(ax, x_position, y_position)
 
-record(fig, "drag.mp4", 1:length(times); framerate = 10) do i; 
+record(fig, "single.mp4", 1:length(times); framerate = 10) do i; 
     n[] = i
 end
 
-# ![](drag.mp4)
+# ![](single.mp4)
 # In this video the limitations of the simplified drag stencil can be seen (see previous versions for a more complex stencil). It is better suited to the forest application like in the [forest example](@ref forest_example)
