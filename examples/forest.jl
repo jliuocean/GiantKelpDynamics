@@ -129,7 +129,7 @@ ax = Axis(fig[4, 1], limits = (400, 550, -8, 0), aspect = AxisAspect(15), xlabel
 
 hm = heatmap!(ax, xf, zc, u_vert, colorrange = u_lims, colormap = :roma)
 
-Colorbar(fig[1:4, 2], hm)
+Colorbar(fig[1:4, 2], hm, label = "Velocity anomly (m / s)")
 
 arrows!(ax, holdfast_x, holdfast_z, x_position_first, z_position_first, color = :black)
 arrows!(ax, abs_x_position_first, abs_z_position_first, rel_x_position_ends, rel_z_position_ends, color = :black)
