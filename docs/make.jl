@@ -5,7 +5,7 @@ using GiantKelpDynamics
 using CairoMakie
 CairoMakie.activate!(type = "svg")
 
-bib_filepath = joinpath(dirname(@__FILE__), "giankelp.bib")
+bib_filepath = joinpath(dirname(@__FILE__), "giantkelp.bib")
 bib = CitationBibliography(bib_filepath, style=:authoryear)
 
 # Examples
