@@ -18,6 +18,3 @@ Further details can be found in [Strong-Wright and Taylor, 2023 (Submitted)](htt
 The model is designed to be used to simulate kelp forests and reproduces their motion well ([Strong-Wright and Taylor, 2023](https://coming-soon)). This figure shows an example of the flow around a forest:
 
 ![Tracer released from a kelp forest within a simple tidal flow](docs/src/assets/forest.png)
-
-## Documentation
-Simple examples and documentation can be found [here](https://coming-soon)
