@@ -125,11 +125,11 @@ hm = heatmap!(ax, xf, yc, u_surface, colorrange = u_lims, colormap = :roma)
 
 arrows!(ax, holdfast_x, holdfast_y, x_position_ends, y_position_ends, color = :black)
 
-ax = Axis(fig[4, 1], limits = (400, 550, -8, 0), aspect = AxisAspect(15), xlabel = "x (m)", ylabel = "z (m)")
+ax = Axis(fig[4, 1], limits = (190, 350, -8, 0), aspect = AxisAspect(15), xlabel = "x (m)", ylabel = "z (m)")
 
 hm = heatmap!(ax, xf, zc, u_vert, colorrange = u_lims, colormap = :roma)
 
-Colorbar(fig[1:4, 2], hm, label = "Velocity anomly (m / s)")
+Colorbar(fig[1:4, 2], hm, label = "Velocity anomaly (m / s)")
 
 arrows!(ax, holdfast_x, holdfast_z, x_position_first, z_position_first, color = :black)
 arrows!(ax, abs_x_position_first, abs_z_position_first, rel_x_position_ends, rel_z_position_ends, color = :black)
@@ -138,5 +138,5 @@ record(fig, "forest.mp4", 1:length(times); framerate = 10) do i;
     n[] = i
 end
 
-# ![](drag.mp4)
+# ![](forest.mp4)
 # In this video the limitations of the simplified drag stencil can be seen (see previous versions for a more complex stencil). It is better suited to the forest application like in the [forest example](@ref forest_example)
