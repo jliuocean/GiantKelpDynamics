@@ -95,7 +95,7 @@ for file in files
 end
 
 deploydocs(
-    repo = "github.com/GiantKelpDynamics/GiantKelpDynamics.jl",
+    repo = "github.com/jagoosw/GiantKelpDynamics",
     versions = ["stable" => "v^", "dev" => "dev", "v#.#.#"],
     forcepush = true,
     push_preview = true,
