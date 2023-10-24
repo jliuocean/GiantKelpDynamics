@@ -13,9 +13,11 @@ using Adapt, KernelAbstractions
 
 using KernelAbstractions.Extras: @unroll
 using OceanBioME.Particles: BiogeochemicalParticles
+using Oceananigans: Center
 using Oceananigans.Architectures: architecture, device
 using Oceananigans.Biogeochemistry: AbstractContinuousFormBiogeochemistry
 using Oceananigans.Fields: Field, CenterField, VelocityFields
+using Oceananigans.Operators: volume
 using Oceananigans.Utils: arch_array
 
 import Adapt: adapt_structure
@@ -25,37 +27,36 @@ import Oceananigans.Biogeochemistry: update_tendencies!
 import Oceananigans.Models.LagrangianParticleTracking: update_lagrangian_particle_properties!, _advect_particles!
 import Oceananigans.OutputWriters: fetch_output, convert_output
 
-struct GiantKelp{FT, VF, VI, SF, KP, TS, DT, DFS, CD} <: BiogeochemicalParticles
+struct GiantKelp{FT, VF, VI, SF, KP, TS, DT, TF, CD} <: BiogeochemicalParticles
     # origin position
-    holdfast_x :: FT
-    holdfast_y :: FT
-    holdfast_z :: FT
+     holdfast_x :: FT
+     holdfast_y :: FT
+     holdfast_z :: FT
 
     scalefactor :: FT
 
     #information about nodes
-    positions :: VF
-    positions_ijk :: VI
-    velocities :: VF 
-    relaxed_lengths :: SF
-    stipe_radii :: SF 
-    blade_areas :: SF
+               positions :: VF
+           positions_ijk :: VI
+              velocities :: VF 
+         relaxed_lengths :: SF
+             stipe_radii :: SF 
+             blade_areas :: SF
     pneumatocyst_volumes :: SF 
-    effective_radii :: SF # effective radius to drag over
+         effective_radii :: SF # effective radius to drag over
 
     # forces on nodes and force history
-    accelerations :: VF
-    old_velocities :: VF
+        accelerations :: VF
+       old_velocities :: VF
     old_accelerations :: VF
-    drag_forces :: VF
+          drag_forces :: VF
 
     kinematic_parameters :: KP
 
     timestepper :: TS
-    max_Δt :: DT
+         max_Δt :: DT
 
-    drag_fields :: DFS
-
+     tracer_forcing :: TF
     custom_dynamics :: CD
 
     function GiantKelp(holdfast_x::FT, holdfast_y::FT, holdfast_z::FT,
@@ -75,28 +76,28 @@ struct GiantKelp{FT, VF, VI, SF, KP, TS, DT, DFS, CD} <: BiogeochemicalParticles
                        kinematic_parameters::KP,
                        timestepper::TS,
                        max_Δt::DT,
-                       drag_fields::DFS,
-                       custom_dynamics::CD) where {FT, VF, VI, SF, KP, TS, DT, DFS, CD}
+                       tracer_forcing::TF,
+                       custom_dynamics::CD) where {FT, VF, VI, SF, KP, TS, DT, TF, CD}
 
-        return new{FT, VF, VI, SF, KP, TS, DT, DFS, CD}(holdfast_x, holdfast_y, holdfast_z,
-                                                        scalefactor,
-                                                        positions,
-                                                        positions_ijk,
-                                                        velocities,
-                                                        relaxed_lengths,
-                                                        stipe_radii,
-                                                        blade_areas,
-                                                        pneumatocyst_volumes,
-                                                        effective_radii,
-                                                        accelerations,
-                                                        old_velocities,
-                                                        old_accelerations,
-                                                        drag_forces,
-                                                        kinematic_parameters,
-                                                        timestepper,
-                                                        max_Δt,
-                                                        drag_fields,
-                                                        custom_dynamics)
+        return new{FT, VF, VI, SF, KP, TS, DT, TF, CD}(holdfast_x, holdfast_y, holdfast_z,
+                                                       scalefactor,
+                                                       positions,
+                                                       positions_ijk,
+                                                       velocities,
+                                                       relaxed_lengths,
+                                                       stipe_radii,
+                                                       blade_areas,
+                                                       pneumatocyst_volumes,
+                                                       effective_radii,
+                                                       accelerations,
+                                                       old_velocities,
+                                                       old_accelerations,
+                                                       drag_forces,
+                                                       kinematic_parameters,
+                                                       timestepper,
+                                                       max_Δt,
+                                                       tracer_forcing,
+                                                       custom_dynamics)
     end
 end
 
@@ -137,6 +138,7 @@ function GiantKelp(; grid,
                                              kᵈ = 500),
                      timestepper = Euler(),
                      max_Δt = Inf,
+                     tracer_forcing = NamedTuple(),
                      custom_dynamics = nothingfunc)
 
     number_kelp = length(holdfast_x)
@@ -166,8 +168,6 @@ function GiantKelp(; grid,
     old_accelerations = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
     drag_forces = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
 
-    drag_fields = VelocityFields(grid)
-
     return GiantKelp(holdfast_x, holdfast_y, holdfast_z,
                      scalefactor,
                      positions, positions_ijk,
@@ -183,7 +183,7 @@ function GiantKelp(; grid,
                      kinematic_parameters,
                      timestepper,
                      max_Δt,
-                     drag_fields,
+                     tracer_forcing,
                      custom_dynamics)
 end
 
@@ -206,7 +206,7 @@ adapt_structure(to, kelp::GiantKelp) = GiantKelp(adapt(to, kelp.holdfast_x),
                                                  adapt(to, kelp.kinematic_parameters),
                                                  nothing,
                                                  adapt(to, kelp.max_Δt),
-                                                 adapt(to, kelp.drag_fields),
+                                                 nothing,
                                                  nothing)
 
 size(particles::GiantKelp) = size(particles.holdfast_x)
@@ -246,5 +246,52 @@ struct NothingBGC <: AbstractContinuousFormBiogeochemistry end
 include("timesteppers.jl")
 include("kinematics.jl")
 include("drag_coupling.jl")
+include("forcing.jl")
+
+function update_tendencies!(bgc, particles::GiantKelp, model)
+    Gᵘ, Gᵛ, Gʷ = @inbounds model.timestepper.Gⁿ[(:u, :v, :w)]
+
+    tracer_tendencies = @inbounds model.timestepper.Gⁿ[keys(particles.tracer_forcing)]
+
+    n_nodes = @inbounds size(particles.positions[1], 1)
+
+    #####
+    ##### Apply the tracer tendencies from each particle
+    ####
+    # we have todo this serially for each particle otherwise we get unsafe memory access to the tendency field
+    @inbounds @unroll for p in 1:length(particles)
+        k_base = 1
+
+        sf = particles.scalefactor[p]
+
+        @unroll for n in 1:n_nodes
+            i, j, k = particles.positions_ijk[p][n, :]
+            vertical_spread = max(1, k - k_base  + 1)
+
+            vol = volume(i, j, k, model.grid, Center(), Center(), Center()) * vertical_spread 
+
+            apply_drag!(particles, Gᵘ, Gᵛ, Gʷ, i, j, k, k_base, vol, p, n)
+
+            @unroll for kidx in k_base:k
+                total_scaling = sf / vertical_spread 
+
+                for (tracer_name, forcing) in pairs(particles.tracer_forcing)
+
+                    tracer_tendency = tracer_tendencies[tracer_name]
+
+                    forcing_arguments = get_arguments(forcing, particles, p, n)
+
+                    forcing_tracers = @inbounds [model.tracers[tracer_name][i, j, kidx] for tracer_name in forcing.field_dependencies if tracer_name in keys(model.tracers)]
+
+                    tracer_tendency[i, j, kidx] += total_scaling * forcing.func(forcing_tracers..., forcing_arguments..., forcing.parameters)
+                end
+            end
+
+            k_base = k # maybe this should be k + 1
+        end
+    end
+end
+
+
 
 end # module GiantKelpDynamics
