@@ -51,7 +51,7 @@ struct GiantKelp{FT, VF, VI, SF, KP, TS, DT, TF, CD} <: BiogeochemicalParticles
     old_accelerations :: VF
           drag_forces :: VF
 
-    kinematic_parameters :: KP
+    kinematics :: KP
 
     timestepper :: TS
          max_Δt :: DT
@@ -73,7 +73,7 @@ struct GiantKelp{FT, VF, VI, SF, KP, TS, DT, TF, CD} <: BiogeochemicalParticles
                        old_velocities::VF,
                        old_accelerations::VF,
                        drag_forces::VF,
-                       kinematic_parameters::KP,
+                       kinematics::KP,
                        timestepper::TS,
                        max_Δt::DT,
                        tracer_forcing::TF,
@@ -93,7 +93,7 @@ struct GiantKelp{FT, VF, VI, SF, KP, TS, DT, TF, CD} <: BiogeochemicalParticles
                                                        old_velocities,
                                                        old_accelerations,
                                                        drag_forces,
-                                                       kinematic_parameters,
+                                                       kinematics,
                                                        timestepper,
                                                        max_Δt,
                                                        tracer_forcing,
@@ -125,17 +125,7 @@ function GiantKelp(; grid,
                                                                             1 / number_nodes .* ones(number_nodes) :
                                                                             segment_unstretched_length ./ sum(segment_unstretched_length)),
                      initial_effective_radii = 0.5 * ones(number_nodes), 
-                     kinematic_parameters = (k = 1.91 * 10 ^ 7, 
-                                             α = 1.41, 
-                                             ρₒ = 1026.0, 
-                                             ρₐ = 1.225, 
-                                             g = 9.81, 
-                                             Cᵈˢ = 1.0, 
-                                             Cᵈᵇ= 0.4 * 12 ^ -0.485, 
-                                             Cᵃ = 3.0,
-                                             n_nodes = number_nodes,
-                                             τ = 5.0,
-                                             kᵈ = 500),
+                     kinematics = UtterDenny(),
                      timestepper = Euler(),
                      max_Δt = Inf,
                      tracer_forcing = NamedTuple(),
@@ -180,7 +170,7 @@ function GiantKelp(; grid,
                      accelerations,
                      old_velocities, old_accelerations,
                      drag_forces,
-                     kinematic_parameters,
+                     kinematics,
                      timestepper,
                      max_Δt,
                      tracer_forcing,
@@ -203,7 +193,7 @@ adapt_structure(to, kelp::GiantKelp) = GiantKelp(adapt(to, kelp.holdfast_x),
                                                  adapt(to, kelp.old_velocities),
                                                  adapt(to, kelp.old_accelerations),
                                                  adapt(to, kelp.drag_forces),
-                                                 adapt(to, kelp.kinematic_parameters),
+                                                 adapt(to, kelp.kinematics),
                                                  nothing,
                                                  adapt(to, kelp.max_Δt),
                                                  nothing,
@@ -244,7 +234,7 @@ end
 struct NothingBGC <: AbstractContinuousFormBiogeochemistry end
 
 include("timesteppers.jl")
-include("kinematics.jl")
+include("kinematics/Kinematics.jl")
 include("drag_coupling.jl")
 include("forcing.jl")
 
@@ -268,9 +258,10 @@ function update_tendencies!(bgc, particles::GiantKelp, model)
             i, j, k = particles.positions_ijk[p][n, :]
             vertical_spread = max(1, k - k_base  + 1)
 
-            vol = volume(i, j, k, model.grid, Center(), Center(), Center()) * vertical_spread 
+            # I want to remove the water density thing here to be computed correctly, not not sure how to at the moment
+            cell_mass = volume(i, j, k, model.grid, Center(), Center(), Center()) * vertical_spread * particles.kinematics.water_density
 
-            apply_drag!(particles, Gᵘ, Gᵛ, Gʷ, i, j, k, k_base, vol, p, n)
+            apply_drag!(particles, Gᵘ, Gᵛ, Gʷ, i, j, k, k_base, cell_mass, p, n)
 
             @unroll for kidx in k_base:k
                 total_scaling = sf / vertical_spread 
@@ -291,7 +282,5 @@ function update_tendencies!(bgc, particles::GiantKelp, model)
         end
     end
 end
-
-
 
 end # module GiantKelpDynamics
