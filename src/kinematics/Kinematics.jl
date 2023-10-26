@@ -36,7 +36,7 @@ function update_lagrangian_particle_properties!(particles::GiantKelp, model, bgc
         synchronize(device(architecture(model)))
     end
 
-    particles.custom_dynamics(particles, model, Δt)
+    particles.custom_dynamics(particles, model, bgc, Δt)
 end
 
 include("utter_denny.jl")

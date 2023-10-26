@@ -1,3 +1,16 @@
+"""
+    UtterDenny(; spring_constant = 1.91 * 10 ^ 7,
+                 spring_exponent = 1.41,
+                 water_density = 1026.0,
+                 pneumatocyst_specific_buoyancy = 5.,
+                 gravitational_acceleration = 9.81,
+                 stipe_drag_coefficient = 1.,
+                 blade_drag_coefficient = 0.4 * 12 ^ -0.485,
+                 added_mass_coefficient = 3.,
+                 damping_timescale = 5.)
+
+Sets up the kinematic model for giant kelp motion from [Utter1996](@citet) and [Rosman2013](@citet).
+"""
 
 @kwdef struct UtterDenny{FT}
                  spring_constant :: FT = 1.91 * 10 ^ 7

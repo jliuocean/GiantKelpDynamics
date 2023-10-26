@@ -1,3 +1,9 @@
+"""
+    RK3(; γ :: G = (8//15, 5//12, 3//4),
+          ζ :: Z = (0.0, -17//60, -5//12)
+
+Holds parameters for a third-order Runge-Kutta-Wray time-stepping scheme described by Le and Moin (1991).
+"""
 struct RK3{G, Z}
     γ :: G
     ζ :: Z
@@ -12,6 +18,11 @@ end
     return @inbounds Δt * ts.γ[stage] * u⃗ + Δt * ts.ζ[stage] * u⃗⁻
 end
 
+"""
+    Euler()
+
+Sets up an Euler timestepper.
+"""
 struct Euler end
 
 @inline function (::Euler)(u⃗, u⃗⁻, Δt, args...)

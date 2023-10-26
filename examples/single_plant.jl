@@ -77,6 +77,8 @@ close(file)
 
 times = u.times
 
+nothing
+
 # Now we can animate the motion of the plant and attenuation of the flow
 
 n = Observable(1)
