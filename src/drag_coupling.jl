@@ -1,9 +1,8 @@
-function apply_drag!(particles, Gᵘ, Gᵛ, Gʷ, i, j, k, k_base, volume, p, n)
+function apply_drag!(particles, Gᵘ, Gᵛ, Gʷ, i, j, k, k_base, cell_mass, p, n)
     @inbounds begin
         sf = particles.scalefactor[p]
-        parameters = particles.kinematic_parameters
 
-        total_scaling = sf / (volume * parameters.ρₒ)
+        total_scaling = sf / cell_mass
 
         Gᵘ[i, j, k_base:k] = Gᵘ[i, j, k_base:k] .- particles.drag_forces[p][n, 1] * total_scaling
         Gᵛ[i, j, k_base:k] = Gᵛ[i, j, k_base:k] .- particles.drag_forces[p][n, 2] * total_scaling
