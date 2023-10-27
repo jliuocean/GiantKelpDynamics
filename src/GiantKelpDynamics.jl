@@ -288,7 +288,7 @@ Giant kelp (Macrocystis pyrifera) model with 2 individuals of 2 nodes.
  - y ∈ [10.0, 20.0]
  - z ∈ [-8.0, -8.0]
 
-julia> set!(kelp, position = [0 0 8; 8 0 8])
+julia> set!(kelp, positions = [0 0 8; 8 0 8])
 
 julia> set!(kelp, positions = [[0 0 8; 8 0 8], [0 0 -8; 8 0 -8]])
 
