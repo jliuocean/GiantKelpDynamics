@@ -348,6 +348,7 @@ No biogeochemistry
  Light attenuation: Nothing
  Sediment: Nothing
  Particles: Giant kelp (Macrocystis pyrifera) model with 2 individuals of 2 nodes.
+ Modifiers: Nothing
 
 ```
 """
