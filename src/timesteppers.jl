@@ -32,7 +32,7 @@ end
 @inline stages(::RK3) = 1:3
 @inline stages(::Euler) = 1:1
 
-@kernel function step_nodes!(accelerations, old_accelerations, velocities, old_velocities, positions, timestepper, Δt, stage)
+@kernel function step_nodes!(accelerations, old_accelerations, velocities, old_velocities, positions, holdfast_z, timestepper, Δt, stage)
     p, n = @index(Global, NTuple)
     @inbounds begin
         old_velocities[p][n, :] .= velocities[p][n, :]
@@ -42,5 +42,9 @@ end
         old_accelerations[p][n, :] .= accelerations[p][n, :]
 
         positions[p][n, :] .+= timestepper(velocities[p][n, :], old_velocities[p][n, :], Δt, stage)
+
+        if positions[p][n, 3] + holdfast_z[p] > 0.0 
+            positions[p][n, 3] = - holdfast_z[p]
+        end
     end
 end

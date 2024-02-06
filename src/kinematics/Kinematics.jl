@@ -30,7 +30,7 @@ function update_lagrangian_particle_properties!(particles::GiantKelp, model, bgc
 
         step_kernel!(particles.accelerations, particles.old_accelerations, 
                      particles.velocities, particles.old_velocities,
-                     particles.positions, 
+                     particles.positions, particles.holdfast_z,
                      particles.timestepper, Δt / n_substeps, stage)
 
         synchronize(device(architecture(model)))
