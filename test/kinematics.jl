@@ -14,9 +14,9 @@ segment_unstretched_length = [16, 8]
 
 @testset "Kelp move" begin
     kelp = GiantKelp(; grid,
-                    holdfast_x, holdfast_y, holdfast_z,
-                    number_nodes,
-                    segment_unstretched_length)
+                       holdfast_x, holdfast_y, holdfast_z,
+                       number_nodes,
+                       segment_unstretched_length)
 
     model = NonhydrostaticModel(; grid, 
                                 biogeochemistry = Biogeochemistry(NothingBGC(),
@@ -38,7 +38,7 @@ segment_unstretched_length = [16, 8]
     set!(kelp, positions = initial_positions)
 
     position_record = []
-    for n in 1:100
+    for n in 1:1000
         push!(position_record, copy(kelp.positions[1]))
         time_step!(model, 1.)
     end

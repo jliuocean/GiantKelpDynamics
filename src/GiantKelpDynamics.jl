@@ -9,7 +9,7 @@ module GiantKelpDynamics
 
 export GiantKelp, NothingBGC, RK3, Euler, UtterDenny
 
-using Adapt, KernelAbstractions
+using Adapt, KernelAbstractions, Atomix
 
 using KernelAbstractions.Extras: @unroll
 using OceanBioME.Particles: BiogeochemicalParticles
@@ -188,7 +188,7 @@ function GiantKelp(; grid,
                                                                             segment_unstretched_length ./ sum(segment_unstretched_length)),
                      kinematics = UtterDenny(),
                      timestepper = Euler(),
-                     max_Δt = Inf,
+                     max_Δt = 1.,
                      tracer_forcing = NamedTuple(),
                      custom_dynamics = nothingfunc)
 
@@ -358,6 +358,8 @@ summary(::NothingBGC) = string("No biogeochemistry")
 show(io, ::NothingBGC) = print(io, string("No biogeochemistry"))
 show(::NothingBGC) = string("No biogeochemistry") # show be removed when show for `Biogeochemistry` is corrected
 
+include("atomix_hack.jl")
+
 include("timesteppers.jl")
 include("kinematics/Kinematics.jl")
 include("drag_coupling.jl")
@@ -368,44 +370,56 @@ function update_tendencies!(bgc, particles::GiantKelp, model)
 
     tracer_tendencies = @inbounds model.timestepper.Gⁿ[keys(particles.tracer_forcing)]
 
-    n_nodes = @inbounds size(particles.positions[1], 1)
+    n_particles = length(particles)
+    worksize = n_particles
+    workgroup = min(256, worksize)
 
     #####
     ##### Apply the tracer tendencies from each particle
     ####
-    # we have todo this serially for each particle otherwise we get unsafe memory access to the tendency field
-    @inbounds @unroll for p in 1:length(particles)
-        k_base = 1
+    update_tendencies_kernel! = _update_tendencies!(device(model.architecture), workgroup, worksize)
 
-        sf = particles.scalefactor[p]
+    update_tendencies_kernel!(particles, Gᵘ, Gᵛ, Gʷ, tracer_tendencies, model.grid, model.tracers) 
 
-        @unroll for n in 1:n_nodes
-            i, j, k = particles.positions_ijk[p][n, :]
-            vertical_spread = max(1, k - k_base  + 1)
+    synchronize(device(architecture(model)))
+end
 
-            # I want to remove the water density thing here to be computed correctly, not not sure how to at the moment
-            cell_mass = volume(i, j, k, model.grid, Center(), Center(), Center()) * vertical_spread * particles.kinematics.water_density
+@kernel function _update_tendencies!(particles, Gᵘ, Gᵛ, Gʷ, tracer_tendencies, grid, tracers)
+    p = @index(Global)
 
-            apply_drag!(particles, Gᵘ, Gᵛ, Gʷ, i, j, k, k_base, cell_mass, p, n)
+    k_base = 1
 
-            @unroll for kidx in k_base:k
-                total_scaling = sf / vertical_spread 
+    sf = particles.scalefactor[p]
 
-                for (tracer_name, forcing) in pairs(particles.tracer_forcing)
+    n_nodes = size(particles.positions_ijk[p], 1)
 
-                    tracer_tendency = tracer_tendencies[tracer_name]
+    for n in 1:n_nodes
+        i, j, k_top = particles.positions_ijk[p][n, :]
 
-                    forcing_arguments = get_arguments(forcing, particles, p, n)
+        total_volume = sum([volume(i, j, k, grid, Center(), Center(), Center()) for k in k_base:k_top]) 
 
-                    forcing_tracers = @inbounds [model.tracers[tracer_name][i, j, kidx] for tracer_name in forcing.field_dependencies if tracer_name in keys(model.tracers)]
+        total_mass = total_volume * particles.kinematics.water_density
 
-                    tracer_tendency[i, j, kidx] += total_scaling * forcing.func(forcing_tracers..., forcing_arguments..., forcing.parameters)
-                end
+        apply_drag!(particles, Gᵘ, Gᵛ, Gʷ, i, j, k_top, k_base, total_mass, p, n)
+
+        for k in k_base:k_top
+            total_scaling = sf * volume(i, j, k, grid, Center(), Center(), Center()) / total_volume
+
+            for (tracer_name, forcing) in pairs(particles.tracer_forcing)
+
+                tracer_tendency = tracer_tendencies[tracer_name]
+
+                forcing_arguments = get_arguments(forcing, particles, p, n)
+
+                forcing_tracers = @inbounds [tracers[tracer_name][i, j, k] for tracer_name in forcing.field_dependencies if tracer_name in keys(tracers)]
+
+                Atomix.@atomic tracer_tendency[i, j, k] += total_scaling * forcing.func(forcing_tracers..., forcing_arguments..., forcing.parameters)
             end
-
-            k_base = k # maybe this should be k + 1
         end
+
+        k_base = k_top
     end
+
 end
 
 end # module GiantKelpDynamics
