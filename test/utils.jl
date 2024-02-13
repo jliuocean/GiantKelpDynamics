@@ -1,4 +1,4 @@
-grid = RectilinearGrid(size = (128, 128, 8), extent = (500, 500, 8))
+grid = RectilinearGrid(arch; size = (128, 128, 8), extent = (500, 500, 8))
 
 spacing = 100.
 

@@ -1,4 +1,4 @@
-grid = RectilinearGrid(size = (10, 10, 10), extent = (10, 10, 10))
+grid = RectilinearGrid(arch; size = (10, 10, 10), extent = (10, 10, 10))
 
 holdfast_x = [5.]
 holdfast_y = [5.]
