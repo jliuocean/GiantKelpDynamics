@@ -14,7 +14,7 @@ using Adapt, KernelAbstractions, Atomix, CUDA
 using KernelAbstractions.Extras: @unroll
 using OceanBioME.Particles: BiogeochemicalParticles
 using Oceananigans: Center
-using Oceananigans.Architectures: architecture, device
+using Oceananigans.Architectures: architecture, device, arch_array
 using Oceananigans.Biogeochemistry: AbstractContinuousFormBiogeochemistry
 using Oceananigans.Fields: Field, CenterField, VelocityFields
 using Oceananigans.Operators: volume
@@ -318,6 +318,8 @@ function set!(ϕ, value)
         set_1d!(ϕ, value)
     elseif length(size(value)) == 2
         set_2d!(ϕ, value)
+    elseif size(value) == size(ϕ)
+        set!(ϕ, arch_array(architecture(ϕ), value))
     else
         error("Failed to set property with size $(size(ϕ)) to values with size $(size(value))")
     end
