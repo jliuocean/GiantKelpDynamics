@@ -29,7 +29,7 @@ model = NonhydrostaticModel(; grid,
 
     @test all([all(Array(kelp.positions[p, :, :]) .== initial_positions) for p in 1:length(kelp)])
 
-    initial_positions = similar(kelp.positions)
+    initial_positions = Array(similar(kelp.positions))
 
     for p in 1:length(kelp)
         initial_positions[p, :, :] .= [p 0 8; 8 0 8]
