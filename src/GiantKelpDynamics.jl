@@ -342,9 +342,9 @@ end
 
 const PropertyArray = Union{Array, CuArray}
 
-fetch_output(output::Array, model) = arch_array(CPU(), output)
+fetch_output(output::PropertyArray, model) = arch_array(CPU(), output)
 
-function convert_output(output::Array, writer)
+function convert_output(output::PropertyArray, writer)
     if architecture(output) isa GPU
         output_array = writer.array_type(undef, size(output)...)
         copyto!(output_array, output)
