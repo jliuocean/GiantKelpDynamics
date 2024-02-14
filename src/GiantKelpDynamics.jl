@@ -342,15 +342,15 @@ end
 
 const PropertyArray = Union{Array, CuArray}
 
-fetch_output(output::PropertyArray, model) = output
+fetch_output(output::Array, model) = output
 
-function convert_output(output::PropertyArray, writer)
-    if architecture(output) isa GPU
-        output_array = writer.array_type(undef, size(output)...)
-        copyto!(output_array, output)
-    else
-        output_array = output
-    end
+fetch_output(output::CuArray, model) = arch_array(Oceananigans.CPU(), output)
+
+convert_output(output::Array, writer) = output
+
+function convert_output(output::CuArray, writer)
+    output_array = writer.array_type(undef, size(output)...)
+    copyto!(output_array, output)
 
     return output_array
 end
