@@ -132,9 +132,11 @@ end
 
     Fⁱ =  ρₒ * (Vᵐ + Vᵖ) .*  a⃗ʷ
 
-    @inbounds begin 
-        accelerations[p, n, :] .= (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ - velocities[p, n, :] ./ τ
-        drag_forces[p, n, :] .= Fᴰ # store for back reaction onto water
+    total_acceleraiton = (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ
+
+    @inbounds for d=1:3 
+        accelerations[p, n, d] = total_acceleraiton[d] - velocities[p, n, d] / τ
+        drag_forces[p, n, d] = Fᴰ[d] # store for back reaction onto water
     end
 end
 
