@@ -182,13 +182,13 @@ end
     
     # add it all together
 
-    acceraration[p, n, 1] = (Fᴰ₁ + T⁻₁ + T⁺₁ + Fⁱ₁) / mᵉ - velocities[p, n, 1] / τ
-    acceraration[p, n, 2] = (Fᴰ₂ + T⁻₂ + T⁺₂ + Fⁱ₂) / mᵉ - velocities[p, n, 1] / τ
-    acceraration[p, n, 3] = (Fᴰ₃ + T⁻₃ + T⁺₃ + Fⁱ₃ + Fᴮ) / mᵉ - velocities[p, n, 1] / τ
+    accerarations[p, n, 1] = (Fᴰ₁ + T⁻₁ + T⁺₁ + Fⁱ₁) / mᵉ - velocities[p, n, 1] / τ
+    accerarations[p, n, 2] = (Fᴰ₂ + T⁻₂ + T⁺₂ + Fⁱ₂) / mᵉ - velocities[p, n, 1] / τ
+    accerarations[p, n, 3] = (Fᴰ₃ + T⁻₃ + T⁺₃ + Fⁱ₃ + Fᴮ) / mᵉ - velocities[p, n, 1] / τ
 
-    drag_force[p, n, 1] = Fᴰ₁
-    drag_force[p, n, 2] = Fᴰ₂
-    drag_force[p, n, 3] = Fᴰ₃
+    drag_forces[p, n, 1] = Fᴰ₁
+    drag_forces[p, n, 2] = Fᴰ₂
+    drag_forces[p, n, 3] = Fᴰ₃
 end
 
 # This is only valid on a regularly spaced grid
