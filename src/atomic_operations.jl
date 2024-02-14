@@ -9,11 +9,6 @@ import Atomix: pointer
     return Base.pointer(ref.data.data, i)
 end
 
-@inline function pointer(ref::Atomix.Internal.IndexableRef{<:OffsetArray, Tuple{Vararg{Int64, N}}} where {N, Indexable})
-    i = LinearIndices(ref.data)[ref.indices...]
-    return Base.pointer(ref.data, i)
-end
-#=
 # Field on CPU
 function atomic_add!(fld::Field, i, j, k, value)
     Atomix.@atomic fld[i, j, k] += value
@@ -23,4 +18,4 @@ end
 function atomic_add!(fld::OffsetArray, i, j, k, value)
     linear_index = LinearIndices(fld)[i, j, k]
     CUDA.@atomic fld.parent[linear_index] += value
-end=#
+end
