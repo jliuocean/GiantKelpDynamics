@@ -11,7 +11,7 @@ export GiantKelp, NothingBGC, RK3, Euler, UtterDenny
 
 using Adapt, Atomix, CUDA
 
-using KernelAbstractions: @kernel, @index
+using KernelAbstractions: @kernel, @index, synchronize
 using Oceananigans: CPU
 
 using KernelAbstractions.Extras: @unroll
@@ -417,7 +417,7 @@ function update_tendencies!(bgc, particles::GiantKelp, model)
 
     update_tendencies_kernel!(particles, Gᵘ, Gᵛ, Gʷ, tracer_tendencies, model.grid, model.tracers) 
 
-    KernelAbstractions.synchronize(device(architecture(model)))
+    synchronize(device(architecture(model)))
 end
 
 @kernel function _update_tendencies!(particles, Gᵘ, Gᵛ, Gʷ, tracer_tendencies, grid, tracers)

@@ -29,14 +29,14 @@ function update_lagrangian_particle_properties!(particles::GiantKelp, model, bgc
                            model.velocities, water_accelerations,
                            particles.kinematics, model.grid) # you cant do `(f::F)(args...)` and access the paramaters of f for kernels
 
-        KernelAbstractions.synchronize(device(architecture(model)))
+        synchronize(device(architecture(model)))
 
         step_kernel!(particles.accelerations, particles.old_accelerations, 
                      particles.velocities, particles.old_velocities,
                      particles.positions, particles.holdfast_z,
                      particles.timestepper, Δt / n_substeps, stage)
 
-        KernelAbstractions.synchronize(device(architecture(model)))
+        synchronize(device(architecture(model)))
     end
 
     particles.custom_dynamics(particles, model, bgc, Δt)
