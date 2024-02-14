@@ -87,7 +87,7 @@ end
 
     @inbounds positions_ijk[p, n, :] = [i, j, k]
 
-    _, k1 = @inbounds n == 1 ? (0.0, 1) : modf(1 +  fractional_z_index(positions[p, n - 1, 3] + z_holdfast[p], (Center(), Center(), Center()), water_velocities.u.grid))
+    _, k1 = @inbounds ifelse(n == 1, (0.0, 1), modf(1 +  fractional_z_index(positions[p, n - 1, 3] + z_holdfast[p], (Center(), Center(), Center()), water_velocities.u.grid)))
 
     k1 = Int(k1)
 
@@ -104,7 +104,7 @@ end
     θ = acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx⃗)) / (sᵣₑₗ * l + eps(0.0))))
     Aˢ = @inbounds 2 * rˢ * l * abs(sin(θ)) + π * rˢ * abs(cos(θ))
 
-    Fᴰ = 0.5 * ρₒ * (Cᵈˢ * Aˢ + Cᵈᵇ * Aᵇ) * sᵣₑₗ .* u⃗ᵣₑₗ
+    Fᴰ = 0.5 * ρₒ * (Cᵈˢ * Aˢ + Cᵈᵇ * Aᵇ) * sᵣₑₗ * u⃗ᵣₑₗ
 
     if n == @inbounds size(relaxed_lengths, 2)
         x⃗⁺ = x⃗ⁱ 
@@ -127,10 +127,10 @@ end
     l⁻ = sqrt(dot(Δx⃗⁻, Δx⃗⁻))
     l⁺ = sqrt(dot(Δx⃗⁺, Δx⃗⁺))
 
-    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, spring_constant, spring_exponent) .* Δx⃗⁻ ./ (l⁻ + eps(0.0))
-    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, spring_constant, spring_exponent) .* Δx⃗⁺ ./ (l⁺ + eps(0.0))
+    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, spring_constant, spring_exponent) * Δx⃗⁻ / (l⁻ + eps(0.0))
+    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, spring_constant, spring_exponent) * Δx⃗⁺ / (l⁺ + eps(0.0))
 
-    Fⁱ =  ρₒ * (Vᵐ + Vᵖ) .*  a⃗ʷ
+    Fⁱ =  ρₒ * (Vᵐ + Vᵖ) *  a⃗ʷ
 
     total_acceleraiton = (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) / mᵉ
 
@@ -159,4 +159,4 @@ end
     return res / (k2 - k1 + 1)
 end
 
-@inline tension(Δx, l₀, Aᶜ, k, α) = Δx > l₀ && !(Δx == 0.0) ? k * ((Δx - l₀) / l₀) ^ α * Aᶜ : 0.0
+@inline tension(Δx, l₀, Aᶜ, k, α) = ifelse(Δx > l₀ && !(Δx == 0.0), k * ((Δx - l₀) / l₀) ^ α * Aᶜ, 0.0)
