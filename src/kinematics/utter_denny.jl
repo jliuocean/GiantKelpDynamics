@@ -104,21 +104,26 @@ end
     positions_ijk[p, n, 2] = j
     positions_ijk[p, n, 3] = k
 
+    ii⁻, jj⁻, kk⁻ = fractional_indices((x⁻ + x_holdfast[p], y⁻ + y_holdfast[p], z⁻ + y_holdfast[p]), grid, Center(), Center(), Center())
+
+    iz = interpolator(kk)
+
+    k1 = get_node(TZ(), Int(ifelse(iz[3] < 0.5, iz[1], iz[2])), grid.Nz)
+
+    uʷ = mean_squared_field(water_velocities[1], i, j, k1, k)
+    vʷ = mean_squared_field(water_velocities[2], i, j, k1, k)
+    wʷ = mean_squared_field(water_velocities[3], i, j, k1, k)
+
+    uʳ = uʷ - uⁱ
+    vʳ = vʷ - vⁱ
+    wʳ = wʷ - wⁱ
+
+    sʳ = sqrt(uʳ^2 + vʳ^2 + wʳ^2)
+
+    ∂ₜuʷ = mean_squared_field(water_accelerations[1], i, j, k1, k)
+    ∂ₜvʷ = mean_squared_field(water_accelerations[2], i, j, k1, k)
+    ∂ₜwʷ = mean_squared_field(water_accelerations[3], i, j, k1, k)
 #=
-    _, k1 = @inbounds ifelse(n == 1, (0.0, 1), modf(1 +  fractional_z_index(positions[p, n - 1, 3] + z_holdfast[p], (Center(), Center(), Center()), water_velocities.u.grid)))
-
-    k1 = Int(k1)
-
-    u⃗ʷ = @inbounds [mean_squared_field(water_velocities[1], i, j, k1, k),
-                    mean_squared_field(water_velocities[2], i, j, k1, k),
-                    mean_squared_field(water_velocities[3], i, j, k1, k)]
-    u⃗ᵣₑₗ = u⃗ʷ - u⃗ⁱ
-    sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
-
-    a⃗ʷ = @inbounds [mean_squared_field(water_accelerations[1], i, j, k1, k),
-                    mean_squared_field(water_accelerations[2], i, j, k1, k),
-                    mean_squared_field(water_accelerations[3], i, j, k1, k)]
-
     θ = acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx⃗)) / (sᵣₑₗ * l + eps(0.0))))
     Aˢ = @inbounds 2 * rˢ * l * abs(sin(θ)) + π * rˢ * abs(cos(θ))
 
@@ -160,7 +165,7 @@ end
 
 # This is only valid on a regularly spaced grid
 # Benchmarks a lot lot faster than mean or sum()/dk etc. and about same speed as _interpolate which is weird
-@inline function mean_squared_field(velocity::Field, i::Int, j::Int, k1::Int, k2::Int)
+@inline function mean_squared_field(velocity, i::Int, j::Int, k1::Int, k2::Int)
     res = 0.0
     @unroll for k in k1:k2
         v = @inbounds velocity[i, j, k]
@@ -169,7 +174,7 @@ end
     return sign(res) * sqrt(abs(res)) / (k2 - k1 + 1)
 end
 
-@inline function mean_field(velocity::Field, i::Int, j::Int, k1::Int, k2::Int)
+@inline function mean_field(velocity, i::Int, j::Int, k1::Int, k2::Int)
     res = 0.0
     @unroll for k in k1:k2
         res += @inbounds velocity[i, j, k]

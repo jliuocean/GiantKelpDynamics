@@ -2,7 +2,7 @@ using LinearAlgebra
 
 using OceanBioME.Particles: get_node
 
-using Oceananigans.Fields: fractional_indices, fractional_z_index, _interpolate
+using Oceananigans.Fields: fractional_indices, fractional_z_index, _interpolate, interpolator
 using Oceananigans.Grids: AbstractGrid
 
 function update_lagrangian_particle_properties!(particles::GiantKelp, model, bgc, Δt)
