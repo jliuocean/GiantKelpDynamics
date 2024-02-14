@@ -428,7 +428,7 @@ end
         k_top = particles.positions_ijk[p, n, 3]
 
         total_volume = 0
-        
+
         for k in k_base:k_top
             total_volume += volume(i, j, k, grid, Center(), Center(), Center())
         end
@@ -437,7 +437,7 @@ end
 
         apply_drag!(particles, Gᵘ, Gᵛ, Gʷ, i, j, k_top, k_base, total_mass, p, n)
 
-        for k in k_base:k_top
+        #=for k in k_base:k_top
             total_scaling = sf * volume(i, j, k, grid, Center(), Center(), Center()) / total_volume
 
             for (tracer_name, forcing) in pairs(particles.tracer_forcing)
@@ -450,7 +450,7 @@ end
 
                 atomic_add!(tracer_tendency, i, j, k, total_scaling * forcing.func(forcing_tracers..., forcing_arguments..., forcing.parameters))
             end
-        end
+        end=#
 
         k_base = k_top
     end
