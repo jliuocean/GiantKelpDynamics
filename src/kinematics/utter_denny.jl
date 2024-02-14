@@ -31,7 +31,7 @@ end
                                           blade_areas, relaxed_lengths, 
                                           accelerations, drag_forces, 
                                           water_velocities, water_accelerations,
-                                          kinematics)
+                                          kinematics, grid)
     p, n = @index(Global, NTuple)
 
     spring_constant = kinematics.spring_constant
@@ -44,41 +44,54 @@ end
     Cᵃ = kinematics.added_mass_coefficient
     τ = kinematics.damping_timescale
 
-    x⃗ⁱ = @inbounds [positions[p, n, 1], positions[p, n, 2], positions[p, n, 3]]
-    u⃗ⁱ = @inbounds [velocities[p, n, 1], velocities[p, n, 2], velocities[p, n, 3]]
+    xⁱ = positions[p, n, 1]
+    yⁱ = positions[p, n, 2]
+    zⁱ = positions[p, n, 3]
+
+    uⁱ = velocities[p, n, 1]
+    vⁱ = velocities[p, n, 2]
+    wⁱ = velocities[p, n, 3]
 
     # can we eliminate this branching logic
     if n == 1
-        x⃗⁻ = zeros(3)
-        u⃗ⁱ⁻¹ = zeros(3)
+        x⁻, y⁻, z⁻ = 0, 0, 0
+        u⁻, v⁻, w⁻ = 0, 0, 0
     else
-        x⃗⁻ = @inbounds [positions[p, n-1, 1], positions[p, n-1, 2], positions[p, n-1, 3]]
-        u⃗ⁱ⁻¹ = @inbounds [velocities[p, n-1, 1], velocities[p, n-1, 2], velocities[p, n-1, 3]]
+        x⁻ = positions[p, n-1, 1]
+        y⁻ = positions[p, n-1, 2]
+        z⁻ = positions[p, n-1, 3]
+
+        u⁻ = velocities[p, n-1, 1]
+        v⁻ = velocities[p, n-1, 2]
+        w⁻ = velocities[p, n-1, 3]
     end
 
-    Δx⃗ = x⃗ⁱ - x⃗⁻
+    Δx = xⁱ - x⁻
+    Δy = yⁱ - y⁻
+    Δz = zⁱ - z⁻
 
-    x = @inbounds x_holdfast[p] + x⃗ⁱ[1]
-    y = @inbounds y_holdfast[p] + x⃗ⁱ[2]
-    z = @inbounds z_holdfast[p] + x⃗ⁱ[3]
+    X = x_holdfast[p] + xⁱ
+    Y = y_holdfast[p] + yⁱ
+    Z = z_holdfast[p] + zⁱ
 
-    l = sqrt(dot(Δx⃗, Δx⃗))
-    Vᵖ = @inbounds pneumatocyst_volumes[p, n]
+    l = sqrt(Δx^2 + Δy^2 + Δz^2)
 
-    Fᴮ = @inbounds ρₚ * Vᵖ * [0.0, 0.0, g]
+    Vᵖ = pneumatocyst_volumes[p, n]
 
-    if @inbounds Fᴮ[3] > 0 && z >= 0  # i.e. floating up not sinking, and outside of the surface
-        @inbounds Fᴮ[3] = 0.0
+    Fᴮ = ρₚ * Vᵖ * g
+
+    if z >= 0
+        Fᴮ = 0
     end
 
-    Aᵇ = @inbounds blade_areas[p, n]
-    rˢ = @inbounds stipe_radii[p, n]
+    Aᵇ = blade_areas[p, n]
+    rˢ = stipe_radii[p, n]
     Vᵐ = π * rˢ ^ 2 * l + Aᵇ * 0.01
     mᵉ = (Vᵐ + Cᵃ * (Vᵐ + Vᵖ)) * ρₒ + Vᵖ * (ρₒ - 500) 
 
     # we need ijk and this also reduces repetition of finding ijk
     i, j, k = fractional_indices(x, y, z, (Center(), Center(), Center()), water_velocities.u.grid)
-
+#=
     _, i = modf(i)
     _, j = modf(j)
     _, k = modf(k)
@@ -143,7 +156,7 @@ end
     @inbounds for d=1:3 
         accelerations[p, n, d] = total_acceleraiton[d] - velocities[p, n, d] / τ
         drag_forces[p, n, d] = Fᴰ[d] # store for back reaction onto water
-    end
+    end=#
 end
 
 # This is only valid on a regularly spaced grid

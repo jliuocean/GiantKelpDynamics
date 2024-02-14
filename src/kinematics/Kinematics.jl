@@ -24,7 +24,7 @@ function update_lagrangian_particle_properties!(particles::GiantKelp, model, bgc
                            particles.blade_areas, particles.relaxed_lengths, 
                            particles.accelerations, particles.drag_forces, 
                            model.velocities, water_accelerations,
-                           particles.kinematics) # you cant do `(f::F)(args...)` and access the paramaters of f for kernels
+                           particles.kinematics, model.grid) # you cant do `(f::F)(args...)` and access the paramaters of f for kernels
 
         KernelAbstractions.synchronize(device(architecture(model)))
 
