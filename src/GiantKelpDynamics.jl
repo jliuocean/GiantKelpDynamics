@@ -415,12 +415,12 @@ function update_tendencies!(bgc, particles::GiantKelp, model)
     ####
     update_tendencies_kernel! = _update_tendencies!(device(model.architecture), workgroup, worksize)
 
-    update_tendencies_kernel!(particles, Gᵘ, Gᵛ, Gʷ, tracer_tendencies, model.grid, model.tracers) 
+    update_tendencies_kernel!(particles, Gᵘ, Gᵛ, Gʷ, tracer_tendencies, model.grid, model.tracers, values(particles.tracer_forcing)) 
 
     synchronize(device(architecture(model)))
 end
 
-@kernel function _update_tendencies!(particles, Gᵘ, Gᵛ, Gʷ, tracer_tendencies, grid, tracers)
+@kernel function _update_tendencies!(particles, Gᵘ, Gᵛ, Gʷ, tracer_tendencies, grid, tracers, tracer_forcings)
     p = @index(Global)
 
     k_base = 1
@@ -444,20 +444,20 @@ end
 
         apply_drag!(particles, Gᵘ, Gᵛ, Gʷ, i, j, k_top, k_base, total_mass, p, n)
 
-        #=for k in k_base:k_top
+        for k in k_base:k_top
             total_scaling = sf * volume(i, j, k, grid, Center(), Center(), Center()) / total_volume
 
-            for (tracer_name, forcing) in pairs(particles.tracer_forcing)
+            for (tracer_idx, forcing) in enumerate(tracer_forcings)
 
-                tracer_tendency = tracer_tendencies[tracer_name]
+                tracer_tendency = tracer_tendencies[tracer_idx]
 
                 forcing_arguments = get_arguments(forcing, particles, p, n)
 
-                forcing_tracers = @inbounds [tracers[tracer_name][i, j, k] for tracer_name in forcing.field_dependencies if tracer_name in keys(tracers)]
+                #forcing_tracers = @inbounds [tracers[tracer_name][i, j, k] for tracer_name in forcing.field_dependencies]
 
-                atomic_add!(tracer_tendency, i, j, k, total_scaling * forcing.func(forcing_tracers..., forcing_arguments..., forcing.parameters))
+                atomic_add!(tracer_tendency, i, j, k, total_scaling * forcing.func(forcing_arguments..., forcing.parameters))#(forcing_tracers..., forcing_arguments..., forcing.parameters))
             end
-        end=#
+        end
 
         k_base = k_top
     end
