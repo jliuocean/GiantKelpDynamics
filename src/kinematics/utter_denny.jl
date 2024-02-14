@@ -58,9 +58,9 @@ end
 
     Δx⃗ = x⃗ⁱ - x⃗⁻
 
-    x = @inbound x_holdfast[p] + x⃗ⁱ[1]
-    y = @inbound y_holdfast[p] + x⃗ⁱ[2]
-    z = @inbound z_holdfast[p] + x⃗ⁱ[3]
+    x = @inbounds x_holdfast[p] + x⃗ⁱ[1]
+    y = @inbounds y_holdfast[p] + x⃗ⁱ[2]
+    z = @inbounds z_holdfast[p] + x⃗ⁱ[3]
 
     l = sqrt(dot(Δx⃗, Δx⃗))
     Vᵖ = @inbounds pneumatocyst_volumes[p, n]
