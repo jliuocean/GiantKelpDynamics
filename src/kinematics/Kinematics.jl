@@ -1,6 +1,7 @@
 using LinearAlgebra
 
 using Oceananigans.Fields: fractional_indices, fractional_z_index, _interpolate
+using Oceananigans.Grids: AbstractGrid
 
 function update_lagrangian_particle_properties!(particles::GiantKelp, model, bgc, Δt)
     # this will need to be modified when we have biological properties to update

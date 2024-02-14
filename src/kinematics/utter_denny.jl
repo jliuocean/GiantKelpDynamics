@@ -31,7 +31,7 @@ end
                                           blade_areas, relaxed_lengths, 
                                           accelerations, drag_forces, 
                                           water_velocities, water_accelerations,
-                                          kinematics, grid)
+                                          kinematics, grid::AbstractGrid{FT, TX, TY, TZ}) where {FT, TX, TY, TZ}
     p, n = @index(Global, NTuple)
 
     spring_constant = kinematics.spring_constant
@@ -80,7 +80,7 @@ end
 
     Fᴮ = ρₚ * Vᵖ * g
 
-    if z >= 0
+    if Z >= 0
         Fᴮ = 0
     end
 
@@ -90,22 +90,20 @@ end
     mᵉ = (Vᵐ + Cᵃ * (Vᵐ + Vᵖ)) * ρₒ + Vᵖ * (ρₒ - 500) 
 
     # we need ijk and this also reduces repetition of finding ijk
-    i, j, k = fractional_indices(x, y, z, (Center(), Center(), Center()), water_velocities.u.grid)
+    i, j, k = fractional_indices((X, Y, Z), grid, Center(), Center(), Center())
+    ix = interpolator(ii)
+    iy = interpolator(jj)
+    iz = interpolator(kk)
+
+    i, j, k = (get_node(TX(), Int(ifelse(ix[3] < 0.5, ix[1], ix[2])), grid.Nx),
+               get_node(TY(), Int(ifelse(iy[3] < 0.5, iy[1], iy[2])), grid.Ny),
+               get_node(TZ(), Int(ifelse(iz[3] < 0.5, iz[1], iz[2])), grid.Nz))
+
+    positions_ijk[p, n, 1] = i
+    positions_ijk[p, n, 2] = j
+    positions_ijk[p, n, 3] = k
+
 #=
-    _, i = modf(i)
-    _, j = modf(j)
-    _, k = modf(k)
-
-    i = Int(i + 1)
-    j = Int(j + 1)
-    k = Int(k + 1)
-
-    @inbounds begin
-        positions_ijk[p, n, 1] = i
-        positions_ijk[p, n, 2] = j
-        positions_ijk[p, n, 3] = k
-    end
-
     _, k1 = @inbounds ifelse(n == 1, (0.0, 1), modf(1 +  fractional_z_index(positions[p, n - 1, 3] + z_holdfast[p], (Center(), Center(), Center()), water_velocities.u.grid)))
 
     k1 = Int(k1)
