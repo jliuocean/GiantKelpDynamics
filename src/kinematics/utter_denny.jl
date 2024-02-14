@@ -76,6 +76,7 @@ end
 
     l = sqrt(Δx^2 + Δy^2 + Δz^2)
 
+    # buoyancy
     Vᵖ = pneumatocyst_volumes[p, n]
 
     Fᴮ = ρₚ * Vᵖ * g
@@ -84,6 +85,7 @@ end
         Fᴮ = 0
     end
 
+    # drag
     Aᵇ = blade_areas[p, n]
     rˢ = stipe_radii[p, n]
     Vᵐ = π * rˢ ^ 2 * l + Aᵇ * 0.01
@@ -106,9 +108,9 @@ end
 
     ii⁻, jj⁻, kk⁻ = fractional_indices((x⁻ + x_holdfast[p], y⁻ + y_holdfast[p], z⁻ + y_holdfast[p]), grid, Center(), Center(), Center())
 
-    iz = interpolator(kk)
+    iz⁻ = interpolator(kk⁻)
 
-    k1 = get_node(TZ(), Int(ifelse(iz[3] < 0.5, iz[1], iz[2])), grid.Nz)
+    k1 = get_node(TZ(), Int(ifelse(iz[3] < 0.5, iz⁻[1], iz⁻[2])), grid.Nz)
 
     uʷ = mean_squared_field(water_velocities[1], i, j, k1, k)
     vʷ = mean_squared_field(water_velocities[2], i, j, k1, k)
@@ -123,44 +125,70 @@ end
     ∂ₜuʷ = mean_squared_field(water_accelerations[1], i, j, k1, k)
     ∂ₜvʷ = mean_squared_field(water_accelerations[2], i, j, k1, k)
     ∂ₜwʷ = mean_squared_field(water_accelerations[3], i, j, k1, k)
-#=
-    θ = acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx⃗)) / (sᵣₑₗ * l + eps(0.0))))
-    Aˢ = @inbounds 2 * rˢ * l * abs(sin(θ)) + π * rˢ * abs(cos(θ))
 
-    Fᴰ = 0.5 * ρₒ * (Cᵈˢ * Aˢ + Cᵈᵇ * Aᵇ) * sᵣₑₗ * u⃗ᵣₑₗ
+    θ = acos(min(1, abs(uʳ * Δx + vʳ * Δy + wʳ * Δz) / (sʳ * l + eps(0.0))))
+    Aˢ = 2 * rˢ * l * abs(sin(θ)) + π * rˢ * abs(cos(θ))
 
+    Fᴰ₁ = 0.5 * ρₒ * (Cᵈˢ * Aˢ + Cᵈᵇ * Aᵇ) * sʳ * uʳ
+    Fᴰ₂ = 0.5 * ρₒ * (Cᵈˢ * Aˢ + Cᵈᵇ * Aᵇ) * sʳ * vʳ
+    Fᴰ₃ = 0.5 * ρₒ * (Cᵈˢ * Aˢ + Cᵈᵇ * Aᵇ) * sʳ * wʳ
+
+    # Tension
     if n == size(relaxed_lengths, 2)
-        x⃗⁺ = x⃗ⁱ 
-        u⃗ⁱ⁺¹ = u⃗ⁱ
+        x⁺, y⁺, z⁺ = 0, 0, 0
+        u⁺, v⁺, w⁺ = 0, 0, 0
+
         Aᶜ⁺ = 0.0 
-        l₀⁺ = @inbounds relaxed_lengths[p, n] 
+        l₀⁺ = relaxed_lengths[p, n] 
     else
-        x⃗⁺ = @inbounds [positions[p, n + 1, 1], positions[p, n + 1, 2], positions[p, n + 1, 3]]
-        u⃗ⁱ⁺¹ = @inbounds [velocities[p, n + 1, 1], velocities[p, n + 1, 2], velocities[p, n + 1, 3]]
-        Aᶜ⁺ = @inbounds π * stipe_radii[p, n + 1] ^ 2
-        l₀⁺ = @inbounds relaxed_lengths[p, n + 1]
+        x⁺ = positions[p, n+1, 1]
+        y⁺ = positions[p, n+1, 2]
+        z⁺ = positions[p, n+1, 3]
+
+        u⁺ = velocities[p, n+1, 1]
+        v⁺ = velocities[p, n+1, 2]
+        w⁺ = velocities[p, n+1, 3]
+
+        Aᶜ⁺ = π * stipe_radii[p, n + 1] ^ 2
+        l₀⁺ = relaxed_lengths[p, n + 1]
     end
 
-    Aᶜ⁻ = @inbounds π * rˢ ^ 2
-    l₀⁻ = @inbounds relaxed_lengths[p, n]
+    Aᶜ⁻ = π * rˢ ^ 2
+    l₀⁻ = relaxed_lengths[p, n]
 
-    Δx⃗⁻ = x⃗⁻ - x⃗ⁱ
-    Δx⃗⁺ = x⃗⁺ - x⃗ⁱ
+    Δx⁻ = x⁻ - xⁱ
+    Δy⁻ = y⁻ - yⁱ
+    Δz⁻ = z⁻ - zⁱ
 
-    l⁻ = sqrt(dot(Δx⃗⁻, Δx⃗⁻))
-    l⁺ = sqrt(dot(Δx⃗⁺, Δx⃗⁺))
+    Δx⁺ = x⁺ - xⁱ
+    Δy⁺ = y⁺ - yⁱ
+    Δz⁺ = z⁺ - zⁱ
 
-    T⁻ = tension(l⁻, l₀⁻, Aᶜ⁻, spring_constant, spring_exponent) * Δx⃗⁻ / (l⁻ + eps(0.0))
-    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, spring_constant, spring_exponent) * Δx⃗⁺ / (l⁺ + eps(0.0))
+    l⁻ = sqrt(Δx⁻^2 + Δy⁻^2 + Δz⁻^2)
+    l⁺ = sqrt(Δx⁺^2 + Δy⁺^2 + Δz⁺^2)
 
-    Fⁱ =  ρₒ * (Vᵐ + Vᵖ) *  a⃗ʷ
+    T⁻₁ = tension(l⁻, l₀⁻, Aᶜ⁻, spring_constant, spring_exponent) * Δx⁻ / (l⁻ + eps(0.0))
+    T⁻₂ = tension(l⁻, l₀⁻, Aᶜ⁻, spring_constant, spring_exponent) * Δy⁻ / (l⁻ + eps(0.0))
+    T⁻₃ = tension(l⁻, l₀⁻, Aᶜ⁻, spring_constant, spring_exponent) * Δz⁻ / (l⁻ + eps(0.0))
 
-    total_acceleraiton = (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) / mᵉ
+    T⁺₁ = tension(l⁺, l₀⁺, Aᶜ⁺, spring_constant, spring_exponent) * Δx⁺ / (l⁺ + eps(0.0))
+    T⁺₂ = tension(l⁺, l₀⁺, Aᶜ⁺, spring_constant, spring_exponent) * Δy⁺ / (l⁺ + eps(0.0))
+    T⁺₃ = tension(l⁺, l₀⁺, Aᶜ⁺, spring_constant, spring_exponent) * Δz⁺ / (l⁺ + eps(0.0))
 
-    @inbounds for d=1:3 
-        accelerations[p, n, d] = total_acceleraiton[d] - velocities[p, n, d] / τ
-        drag_forces[p, n, d] = Fᴰ[d] # store for back reaction onto water
-    end=#
+    # inertial force
+    Fⁱ₁ = ρₒ * (Vᵐ + Vᵖ) * ∂ₜuʷ
+    Fⁱ₂ = ρₒ * (Vᵐ + Vᵖ) * ∂ₜvʷ
+    Fⁱ₃ = ρₒ * (Vᵐ + Vᵖ) * ∂ₜwʷ
+    
+    # add it all together
+
+    acceraration[p, n, 1] = (Fᴰ₁ + T⁻₁ + T⁺₁ + Fⁱ₁) / mᵉ - velocities[p, n, 1] / τ
+    acceraration[p, n, 2] = (Fᴰ₂ + T⁻₂ + T⁺₂ + Fⁱ₂) / mᵉ - velocities[p, n, 1] / τ
+    acceraration[p, n, 3] = (Fᴰ₃ + T⁻₃ + T⁺₃ + Fⁱ₃ + Fᴮ) / mᵉ - velocities[p, n, 1] / τ
+
+    drag_force[p, n, 1] = Fᴰ₁
+    drag_force[p, n, 2] = Fᴰ₂
+    drag_force[p, n, 3] = Fᴰ₃
 end
 
 # This is only valid on a regularly spaced grid
