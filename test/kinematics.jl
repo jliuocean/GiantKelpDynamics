@@ -40,7 +40,7 @@ segment_unstretched_length = [16, 8]
         time_step!(model, 1.)
     end
 
-    position_record = copy(kelp.positions)
+    position_record = Array(copy(kelp.positions))
 
     # nodes are setteling
     CUDA.@allowscalar @test all(isapprox.(position_record, Array(kelp.positions); atol = 0.001))
