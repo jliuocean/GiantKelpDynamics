@@ -444,6 +444,7 @@ end
 
         apply_drag!(particles, Gᵘ, Gᵛ, Gʷ, i, j, k_top, k_base, total_mass, p, n)
 
+        # maybe optimal to invert the order of these loops
         for k in k_base:k_top
             total_scaling = sf * volume(i, j, k, grid, Center(), Center(), Center()) / total_volume
 
