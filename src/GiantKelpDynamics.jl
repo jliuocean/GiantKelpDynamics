@@ -347,7 +347,7 @@ const PropertyArray = Union{Array, CuArray}
 
 fetch_output(output::Array, model) = output
 
-fetch_output(output::CuArray, model) = arch_array(Oceananigans.CPU(), output)
+fetch_output(output::CuArray, model) = arch_array(CPU(), output)
 
 convert_output(output::Array, writer) = output
 
