@@ -66,7 +66,7 @@ end
     set!(kelp, positions = initial_positions)
     set!(model, u = u₀)
 
-    all_initial_positions = copy(kelp.positions)
+    all_initial_positions = Array(copy(kelp.positions))
 
     for n in 1:200
         time_step!(model, 1.)

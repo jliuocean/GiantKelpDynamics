@@ -27,7 +27,7 @@ model = NonhydrostaticModel(; grid,
 
     set!(kelp, positions = initial_positions)
 
-    @test all([all(kelp.positions[p, :, :] .== initial_positions) for p in 1:length(kelp)])
+    @test all([all(Array(kelp.positions[p, :, :]) .== initial_positions) for p in 1:length(kelp)])
 
     initial_positions = similar(kelp.positions)
 
@@ -37,7 +37,7 @@ model = NonhydrostaticModel(; grid,
 
     set!(kelp, positions = initial_positions)
 
-    @test all(kelp.positions .== initial_positions)
+    @test all(Array(kelp.positions) .== initial_positions)
 end
 
 @testset "Output" begin
@@ -60,7 +60,7 @@ end
 
     close(file)
 
-    @test all(positions[end][1, :, :] .== kelp.positions[1, :, :])
+    @test all(positions[end][1, :, :] .== Array(kelp.positions[1, :, :]))
 
-    @test all(blade_areas[end][1, :, :] .== kelp.blade_areas[1, :, :])
+    @test all(blade_areas[end][1, :, :] .== Array(kelp.blade_areas[1, :, :]))
 end
