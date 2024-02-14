@@ -90,7 +90,8 @@ end
     mᵉ = (Vᵐ + Cᵃ * (Vᵐ + Vᵖ)) * ρₒ + Vᵖ * (ρₒ - 500) 
 
     # we need ijk and this also reduces repetition of finding ijk
-    i, j, k = fractional_indices((X, Y, Z), grid, Center(), Center(), Center())
+    ii, jj, kk = fractional_indices((X, Y, Z), grid, Center(), Center(), Center())
+
     ix = interpolator(ii)
     iy = interpolator(jj)
     iz = interpolator(kk)

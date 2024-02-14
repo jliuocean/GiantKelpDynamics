@@ -1,5 +1,7 @@
 using LinearAlgebra
 
+using OceanBioME.Particles: get_node
+
 using Oceananigans.Fields: fractional_indices, fractional_z_index, _interpolate
 using Oceananigans.Grids: AbstractGrid
 
