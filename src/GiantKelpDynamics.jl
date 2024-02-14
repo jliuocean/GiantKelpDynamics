@@ -423,7 +423,9 @@ end
     n_nodes = size(particles.positions_ijk, 2)
 
     for n in 1:n_nodes
-        i, j, k_top = particles.positions_ijk[p, n, :]
+        i = particles.positions_ijk[p, n, 1]
+        j = particles.positions_ijk[p, n, 2]
+        k_top = particles.positions_ijk[p, n, 3]
 
         total_volume = sum([volume(i, j, k, grid, Center(), Center(), Center()) for k in k_base:k_top]) 
 
