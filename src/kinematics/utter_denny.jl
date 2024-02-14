@@ -132,7 +132,7 @@ end
 
     Fⁱ =  ρₒ * (Vᵐ + Vᵖ) .*  a⃗ʷ
 
-    total_acceleraiton = (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ
+    total_acceleraiton = (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) / mᵉ
 
     @inbounds for d=1:3 
         accelerations[p, n, d] = total_acceleraiton[d] - velocities[p, n, d] / τ
