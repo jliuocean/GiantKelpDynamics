@@ -1,4 +1,4 @@
-using Oceananigans, GiantKelpDynamics, Test, Statistics, JLD2, Oceananigans.Units
+using Oceananigans, GiantKelpDynamics, Test, Statistics, JLD2, Oceananigans.Units, CUDA
 using OceanBioME: Biogeochemistry
 
 arch = CPU()

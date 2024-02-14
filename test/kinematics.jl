@@ -23,7 +23,6 @@ segment_unstretched_length = [16, 8]
                                                                     particles = kelp),
                                   advection = WENO())
 
-
     initial_positions = [0 0 8; 8 0 8]
 
     set!(kelp, positions = initial_positions)
@@ -31,7 +30,7 @@ segment_unstretched_length = [16, 8]
     time_step!(model, 10.)
 
     # not moving when no flow and unstretched
-    @test all([all(kelp.positions[p, :, :] .== initial_positions) for p=1:length(holdfast_x)])
+    CUDA.@allowscalar @test all([all(Array(kelp.positions[p, :, :]) .== initial_positions) for p=1:length(holdfast_x)])
 
     initial_positions = [15 0 8; 25 0 8]
 
@@ -44,7 +43,7 @@ segment_unstretched_length = [16, 8]
     position_record = copy(kelp.positions)
 
     # nodes are setteling
-    @test all(isapprox.(position_record, kelp.positions; atol = 0.001))
+    CUDA.@allowscalar @test all(isapprox.(position_record, Array(kelp.positions); atol = 0.001))
 end
 
 @testset "Drag" begin
@@ -75,7 +74,7 @@ end
 
     # the kelp are being moved by the flow
     
-    @test !any(isapprox.(all_initial_positions[:, :, 1:2], kelp.positions[:, :, 1:2]; atol = 0.001))
+    CUDA.@allowscalar  @test !any(isapprox.(all_initial_positions[:, :, 1:2], Array(kelp.positions[:, :, 1:2]); atol = 0.001))
 
     # the kelp are dragging the water
     @test !(mean(model.velocities.u) ≈ u₀)
