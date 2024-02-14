@@ -9,8 +9,9 @@ module GiantKelpDynamics
 
 export GiantKelp, NothingBGC, RK3, Euler, UtterDenny
 
-using Adapt, KernelAbstractions, Atomix, CUDA
+using Adapt, Atomix, CUDA
 
+using KernelAbstractions: @kernel
 using Oceananigans: CPU
 
 using KernelAbstractions.Extras: @unroll
