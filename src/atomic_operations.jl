@@ -23,4 +23,4 @@ end
 function atomic_add!(fld::OffsetArray, i, j, k, value)
     linear_index = LinearIndices(fld)[i, j, k]
     CUDA.@atomic fld.parent[linear_index] += value
-end
+end=#
