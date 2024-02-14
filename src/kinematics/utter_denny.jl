@@ -91,11 +91,15 @@ end
 
     k1 = Int(k1)
 
-    u⃗ʷ = @inbounds [ntuple(d -> mean_squared_field(water_velocities[d], i, j, k1, k), 3)...]
+    u⃗ʷ = @inbounds [mean_squared_field(water_velocities[1], i, j, k1, k),
+                    mean_squared_field(water_velocities[2], i, j, k1, k),
+                    mean_squared_field(water_velocities[3], i, j, k1, k)]
     u⃗ᵣₑₗ = u⃗ʷ - u⃗ⁱ
     sᵣₑₗ = sqrt(dot(u⃗ᵣₑₗ, u⃗ᵣₑₗ))
 
-    a⃗ʷ = @inbounds [ntuple(d -> mean_field(water_accelerations[d], i, j, k1, k), 3)...]
+    a⃗ʷ = @inbounds [mean_squared_field(water_accelerations[1], i, j, k1, k),
+                    mean_squared_field(water_accelerations[2], i, j, k1, k),
+                    mean_squared_field(water_accelerations[3], i, j, k1, k)]
 
     θ = acos(min(1, abs(dot(u⃗ᵣₑₗ, Δx⃗)) / (sᵣₑₗ * l + eps(0.0))))
     Aˢ = @inbounds 2 * rˢ * l * abs(sin(θ)) + π * rˢ * abs(cos(θ))
