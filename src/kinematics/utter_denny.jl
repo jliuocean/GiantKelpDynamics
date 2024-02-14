@@ -165,4 +165,4 @@ end
     return res / (k2 - k1 + 1)
 end
 
-@inline tension(Δx, l₀, Aᶜ, k, α) = ifelse(Δx > l₀ && !(Δx == 0.0), k * ((Δx - l₀) / l₀) ^ α * Aᶜ, 0.0)
+@inline tension(Δx, l₀, Aᶜ, k, α) = ifelse(Δx > l₀ && !(Δx == 0.0), k * (max(0, (Δx - l₀)) / l₀) ^ α * Aᶜ, 0.0)
