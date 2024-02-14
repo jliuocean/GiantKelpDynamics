@@ -11,7 +11,7 @@ export GiantKelp, NothingBGC, RK3, Euler, UtterDenny
 
 using Adapt, Atomix, CUDA
 
-using KernelAbstractions: @kernel
+using KernelAbstractions: @kernel, @index
 using Oceananigans: CPU
 
 using KernelAbstractions.Extras: @unroll
