@@ -34,17 +34,18 @@ end
 
 @kernel function step_nodes!(accelerations, old_accelerations, velocities, old_velocities, positions, holdfast_z, timestepper, Δt, stage)
     p, n = @index(Global, NTuple)
+
     @inbounds begin
-        old_velocities[p][n, :] .= velocities[p][n, :]
+        old_velocities[p, n, :] .= velocities[p, n, :]
         
-        velocities[p][n, :] .+= timestepper(accelerations[p][n, :], old_accelerations[p][n, :], Δt, stage)
+        velocities[p, n, :] .+= timestepper(accelerations[p, n, :], old_accelerations[p, n, :], Δt, stage)
         
-        old_accelerations[p][n, :] .= accelerations[p][n, :]
+        old_accelerations[p, n, :] .= accelerations[p, n, :]
 
-        positions[p][n, :] .+= timestepper(velocities[p][n, :], old_velocities[p][n, :], Δt, stage)
+        positions[p, n, :] .+= timestepper(velocities[p, n, :], old_velocities[p, n, :], Δt, stage)
 
-        if positions[p][n, 3] + holdfast_z[p] > 0.0 
-            positions[p][n, 3] = - holdfast_z[p]
+        if positions[p, n, 3] + holdfast_z[p] > 0.0 
+            positions[p, n, 3] = - holdfast_z[p]
         end
     end
 end

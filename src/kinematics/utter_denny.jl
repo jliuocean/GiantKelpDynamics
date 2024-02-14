@@ -44,16 +44,16 @@ end
     Cᵃ = kinematics.added_mass_coefficient
     τ = kinematics.damping_timescale
 
-    x⃗ⁱ = @inbounds positions[p][n, :]
-    u⃗ⁱ = @inbounds velocities[p][n, :]
+    x⃗ⁱ = @inbounds positions[p, n, :]
+    u⃗ⁱ = @inbounds velocities[p, n, :]
 
     # can we eliminate this branching logic
     if n == 1
         x⃗⁻ = zeros(3)
         u⃗ⁱ⁻¹ = zeros(3)
     else
-        x⃗⁻ = @inbounds positions[p][n - 1, :]
-        u⃗ⁱ⁻¹ = @inbounds velocities[p][n - 1, :]
+        x⃗⁻ = @inbounds positions[p, n - 1, :]
+        u⃗ⁱ⁻¹ = @inbounds velocities[p, n - 1, :]
     end
 
     Δx⃗ = x⃗ⁱ - x⃗⁻
@@ -61,7 +61,7 @@ end
     x, y, z = @inbounds [x_holdfast[p], y_holdfast[p], z_holdfast[p]] + x⃗ⁱ
 
     l = sqrt(dot(Δx⃗, Δx⃗))
-    Vᵖ = @inbounds pneumatocyst_volumes[p][n]
+    Vᵖ = @inbounds pneumatocyst_volumes[p, n]
 
     Fᴮ = @inbounds ρₚ * Vᵖ * [0.0, 0.0, g]
 
@@ -69,14 +69,14 @@ end
         @inbounds Fᴮ[3] = 0.0
     end
 
-    Aᵇ = @inbounds blade_areas[p][n]
-    rˢ = @inbounds stipe_radii[p][n]
+    Aᵇ = @inbounds blade_areas[p, n]
+    rˢ = @inbounds stipe_radii[p, n]
     Vᵐ = π * rˢ ^ 2 * l + Aᵇ * 0.01
     mᵉ = (Vᵐ + Cᵃ * (Vᵐ + Vᵖ)) * ρₒ + Vᵖ * (ρₒ - 500) 
 
     # we need ijk and this also reduces repetition of finding ijk
     i, j, k = fractional_indices(x, y, z, (Center(), Center(), Center()), water_velocities.u.grid)
-    
+
     _, i = modf(i)
     _, j = modf(j)
     _, k = modf(k)
@@ -85,9 +85,9 @@ end
     j = Int(j + 1)
     k = Int(k + 1)
 
-    @inbounds positions_ijk[p][n, :] = [i, j, k]
+    @inbounds positions_ijk[p, n, :] = [i, j, k]
 
-    _, k1 = @inbounds n == 1 ? (0.0, 1) : modf(1 +  fractional_z_index(positions[p][n - 1, 3] + z_holdfast[p], (Center(), Center(), Center()), water_velocities.u.grid))
+    _, k1 = @inbounds n == 1 ? (0.0, 1) : modf(1 +  fractional_z_index(positions[p, n - 1, 3] + z_holdfast[p], (Center(), Center(), Center()), water_velocities.u.grid))
 
     k1 = Int(k1)
 
@@ -102,20 +102,20 @@ end
 
     Fᴰ = 0.5 * ρₒ * (Cᵈˢ * Aˢ + Cᵈᵇ * Aᵇ) * sᵣₑₗ .* u⃗ᵣₑₗ
 
-    if n == @inbounds length(relaxed_lengths[p])
+    if n == @inbounds size(relaxed_lengths, 2)
         x⃗⁺ = x⃗ⁱ 
         u⃗ⁱ⁺¹ = u⃗ⁱ
         Aᶜ⁺ = 0.0 
-        l₀⁺ = @inbounds relaxed_lengths[p][n] 
+        l₀⁺ = @inbounds relaxed_lengths[p, n] 
     else
-        x⃗⁺ = @inbounds positions[p][n + 1, :]
-        u⃗ⁱ⁺¹ = @inbounds velocities[p][n + 1, :]
-        Aᶜ⁺ = @inbounds π * stipe_radii[p][n + 1] ^ 2
-        l₀⁺ = @inbounds relaxed_lengths[p][n + 1]
+        x⃗⁺ = @inbounds positions[p, n + 1, :]
+        u⃗ⁱ⁺¹ = @inbounds velocities[p, n + 1, :]
+        Aᶜ⁺ = @inbounds π * stipe_radii[p, n + 1] ^ 2
+        l₀⁺ = @inbounds relaxed_lengths[p, n + 1]
     end
 
     Aᶜ⁻ = @inbounds π * rˢ ^ 2
-    l₀⁻ = @inbounds relaxed_lengths[p][n]
+    l₀⁻ = @inbounds relaxed_lengths[p, n]
 
     Δx⃗⁻ = x⃗⁻ - x⃗ⁱ
     Δx⃗⁺ = x⃗⁺ - x⃗ⁱ
@@ -129,8 +129,8 @@ end
     Fⁱ =  ρₒ * (Vᵐ + Vᵖ) .*  a⃗ʷ
 
     @inbounds begin 
-        accelerations[p][n, :] .= (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ - velocities[p][n, :] ./ τ
-        drag_forces[p][n, :] .= Fᴰ + Fⁱ # store for back reaction onto water
+        accelerations[p, n, :] .= (Fᴮ + Fᴰ + T⁻ + T⁺ + Fⁱ) ./ mᵉ - velocities[p, n, :] ./ τ
+        drag_forces[p, n, :] .= Fᴰ # store for back reaction onto water
     end
 end
 
@@ -153,4 +153,4 @@ end
     return res / (k2 - k1 + 1)
 end
 
-@inline tension(Δx, l₀, Aᶜ, k, α) = Δx > l₀ && !(Δx == 0.0)  ? k * ((Δx - l₀) / l₀) ^ α * Aᶜ : 0.0
+@inline tension(Δx, l₀, Aᶜ, k, α) = Δx > l₀ && !(Δx == 0.0) ? k * ((Δx - l₀) / l₀) ^ α * Aᶜ : 0.0

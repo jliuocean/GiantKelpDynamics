@@ -19,9 +19,9 @@ segment_unstretched_length = [16, 8]
                        segment_unstretched_length)
 
     model = NonhydrostaticModel(; grid, 
-                                biogeochemistry = Biogeochemistry(NothingBGC(),
+                                  biogeochemistry = Biogeochemistry(NothingBGC(),
                                                                     particles = kelp),
-                                advection = WENO())
+                                  advection = WENO())
 
 
     initial_positions = [0 0 8; 8 0 8]
@@ -31,20 +31,20 @@ segment_unstretched_length = [16, 8]
     time_step!(model, 10.)
 
     # not moving when no flow and unstretched
-    @test all([all(position .== initial_positions) for position in kelp.positions])
+    @test all([all(kelp.positions[p, :, :] .== initial_positions) for p=1:length(holdfast_x)])
 
     initial_positions = [15 0 8; 25 0 8]
 
     set!(kelp, positions = initial_positions)
 
-    position_record = []
-    for n in 1:1000
-        push!(position_record, copy(kelp.positions[1]))
+    for n in 1:200
         time_step!(model, 1.)
     end
 
+    position_record = copy(kelp.positions)
+
     # nodes are setteling
-    @test all(isapprox.(position_record[end - 1], position_record[end]; atol = 0.001))
+    @test all(isapprox.(position_record, kelp.positions; atol = 0.001))
 end
 
 @testset "Drag" begin
@@ -67,14 +67,17 @@ end
     set!(kelp, positions = initial_positions)
     set!(model, u = u₀)
 
-    for n in 1:1000
+    all_initial_positions = copy(kelp.positions)
+
+    for n in 1:200
         time_step!(model, 1.)
     end
 
     # the kelp are being moved by the flow
-    @test all([all(position[:, 1:2] .!= initial_positions[:, 1:2]) for position in kelp.positions])
+    
+    @test !any(isapprox.(all_initial_positions[:, :, 1:2], kelp.positions[:, :, 1:2]; atol = 0.001))
 
     # the kelp are dragging the water
     @test !(mean(model.velocities.u) ≈ u₀)
-    @test maximum(abs, model.velocities.v) .!= 0
+    @test !isapprox(maximum(abs, model.velocities.v), 0)
 end

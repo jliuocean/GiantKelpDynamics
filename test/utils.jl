@@ -27,9 +27,13 @@ model = NonhydrostaticModel(; grid,
 
     set!(kelp, positions = initial_positions)
 
-    @test all([all(position .== initial_positions) for position in kelp.positions])
+    @test all([all(kelp.positions[p, :, :] .== initial_positions) for p in 1:length(kelp)])
 
-    initial_positions = vec([[i 0 8; 8 0 8] for (i, x) in enumerate(x_pattern), (j, y) in enumerate(y_pattern)])
+    initial_positions = similar(kelp.positions)
+
+    for p in 1:length(kelp)
+        initial_positions[p, :, :] .= [p 0 8; 8 0 8]
+    end
 
     set!(kelp, positions = initial_positions)
 
@@ -43,6 +47,8 @@ end
     
     run!(simulation)
 
+    # TODO: make some utility to load this stuff
+
     file = jldopen("kelp.jld2")
 
     @test keys(file["timeseries"]) == ["positions", "blade_areas", "t"]
@@ -54,9 +60,7 @@ end
 
     close(file)
 
-    @test length(positions[1]) == length(kelp)
+    @test all(positions[end][1, :, :] .== kelp.positions[1, :, :])
 
-    @test all(positions[end][1] .== kelp.positions[1])
-
-    @test all(blade_areas[end][1] .== kelp.blade_areas[1])
+    @test all(blade_areas[end][1, :, :] .== kelp.blade_areas[1, :, :])
 end

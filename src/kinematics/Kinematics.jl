@@ -4,8 +4,8 @@ using Oceananigans.Fields: fractional_indices, fractional_z_index, _interpolate
 
 function update_lagrangian_particle_properties!(particles::GiantKelp, model, bgc, Δt)
     # this will need to be modified when we have biological properties to update
-    n_particles = length(particles)
-    n_nodes = @inbounds size(particles.positions[1], 1)
+    n_particles = size(particles, 1)
+    n_nodes = @inbounds size(particles, 2)
     worksize = (n_particles, n_nodes)
     workgroup = (1, min(256, worksize[1]))
 
@@ -24,16 +24,16 @@ function update_lagrangian_particle_properties!(particles::GiantKelp, model, bgc
                            particles.blade_areas, particles.relaxed_lengths, 
                            particles.accelerations, particles.drag_forces, 
                            model.velocities, water_accelerations,
-                           particles.kinematics) # for some reason you cant do `(f::F)(args...)` and access the paramaters of f
+                           particles.kinematics) # you cant do `(f::F)(args...)` and access the paramaters of f for kernels
 
-        synchronize(device(architecture(model)))
+        KernelAbstractions.synchronize(device(architecture(model)))
 
         step_kernel!(particles.accelerations, particles.old_accelerations, 
                      particles.velocities, particles.old_velocities,
                      particles.positions, particles.holdfast_z,
                      particles.timestepper, Δt / n_substeps, stage)
 
-        synchronize(device(architecture(model)))
+        KernelAbstractions.synchronize(device(architecture(model)))
     end
 
     particles.custom_dynamics(particles, model, bgc, Δt)

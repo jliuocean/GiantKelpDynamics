@@ -9,7 +9,7 @@ module GiantKelpDynamics
 
 export GiantKelp, NothingBGC, RK3, Euler, UtterDenny
 
-using Adapt, KernelAbstractions, Atomix
+using Adapt, KernelAbstractions, Atomix, CUDA
 
 using KernelAbstractions.Extras: @unroll
 using OceanBioME.Particles: BiogeochemicalParticles
@@ -202,21 +202,26 @@ function GiantKelp(; grid,
     scalefactor = arch_array(arch, scalefactor)
 
     
-    velocities = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
-    positions = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
+    velocities = arch_array(arch, zeros(number_kelp, number_nodes, 3))
+    positions = arch_array(arch, zeros(number_kelp, number_nodes, 3))
 
-    positions_ijk = [arch_array(arch, ones(Int, number_nodes, 3)) for p in 1:number_kelp]
+    positions_ijk = arch_array(arch, ones(Int, number_kelp, number_nodes, 3))
 
 
-    relaxed_lengths = [arch_array(arch, ones(number_nodes) .* segment_unstretched_length) for p in 1:number_kelp]
-    stipe_radii = [arch_array(arch, ones(number_nodes) .* initial_stipe_radii) for p in 1:number_kelp]
-    blade_areas = [arch_array(arch, ones(number_nodes) .* initial_blade_areas) for p in 1:number_kelp]
-    pneumatocyst_volumes = [arch_array(arch, ones(number_nodes) .* initial_pneumatocyst_volume) for p in 1:number_kelp]
+    relaxed_lengths = arch_array(arch, ones(number_kelp, number_nodes))
+    stipe_radii = arch_array(arch, ones(number_kelp, number_nodes))
+    blade_areas = arch_array(arch, ones(number_kelp, number_nodes))
+    pneumatocyst_volumes = arch_array(arch, ones(number_kelp, number_nodes))
 
-    accelerations = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
-    old_velocities = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
-    old_accelerations = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
-    drag_forces = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
+    set!(relaxed_lengths, segment_unstretched_length)
+    set!(stipe_radii, initial_stipe_radii)
+    set!(blade_areas, initial_blade_areas)
+    set!(pneumatocyst_volumes, initial_pneumatocyst_volume)
+
+    accelerations = arch_array(arch, zeros(number_kelp, number_nodes, 3))
+    old_velocities = arch_array(arch, zeros(number_kelp, number_nodes, 3))
+    old_accelerations = arch_array(arch, zeros(number_kelp, number_nodes, 3))
+    drag_forces = arch_array(arch, zeros(number_kelp, number_nodes, 3))
 
     return GiantKelp(holdfast_x, holdfast_y, holdfast_z,
                      scalefactor,
@@ -260,6 +265,8 @@ adapt_structure(to, kelp::GiantKelp) = GiantKelp(adapt(to, kelp.holdfast_x),
 size(particles::GiantKelp) = size(particles.holdfast_x)
 length(particles::GiantKelp) = length(particles.holdfast_x)
 
+size(particles::GiantKelp, dim::Int) = size(particles.positions, dim)
+
 summary(particles::GiantKelp) = string("Giant kelp (Macrocystis pyrifera) model with $(length(particles)) individuals of $(size(particles.positions[1], 1)) nodes.")
 show(io::IO, particles::GiantKelp) = print(io, string(summary(particles), " \n",
                                                       " Base positions:\n", 
@@ -297,26 +304,48 @@ julia> set!(kelp, positions = [[0 0 8; 8 0 8], [0 0 -8; 8 0 -8]])
 function set!(kelp::GiantKelp; kwargs...)
     for (fldname, value) in kwargs
         ϕ = getproperty(kelp, fldname)
-        if size(value) == size(ϕ) && size(value[1]) == size(ϕ[1])
-            ϕ .= value
-        elseif size(value) == size(ϕ[1])
-            [ϕₚ .= value for ϕₚ in ϕ]
-        else
-            error("Size missmatch")
-        end
+        set!(ϕ, value)
     end
 end
 
+const NotAField = Union{Array, CuArray}
+
+set!(ϕ::NotAField, value::Number) = ϕ .= value
+set!(ϕ::A, value::A) where A = ϕ.= value
+
+function set!(ϕ, value)
+    if length(size(value)) == 1
+        set_1d!(ϕ, value)
+    elseif length(size(value)) == 2
+        set_2d!(ϕ, value)
+    else
+        error("Failed to set property with size $(size(ϕ)) to values with size $(size(value))")
+    end
+end
+
+function set_1d!(ϕ, value)
+    for n in eachindex(value)
+        ϕ[:, n] .= value[n]
+    end
+end
+
+function set_2d!(ϕ, value)
+    for n in 1:size(value, 1), d in 1:size(value, 2)
+        ϕ[:, n, d] .= value[n, d]
+    end
+end
+
+
 # for output writer
 
-fetch_output(output::Union{Vector{<:Matrix}, Vector{<:Vector}}, model) = output
+fetch_output(output::Array, model) = output
 
-function convert_output(output::Union{Vector{<:Matrix}, Vector{<:Vector}}, writer)
+function convert_output(output::Array, writer)
     if architecture(output) isa GPU
         output_array = writer.array_type(undef, size(output)...)
         copyto!(output_array, output)
     else
-        output_array = [convert(writer.array_type, opt) for opt in output]
+        output_array = output
     end
 
     return output_array
@@ -370,7 +399,7 @@ function update_tendencies!(bgc, particles::GiantKelp, model)
 
     tracer_tendencies = @inbounds model.timestepper.Gⁿ[keys(particles.tracer_forcing)]
 
-    n_particles = length(particles)
+    n_particles = size(particles, 1)
     worksize = n_particles
     workgroup = min(256, worksize)
 
@@ -381,7 +410,7 @@ function update_tendencies!(bgc, particles::GiantKelp, model)
 
     update_tendencies_kernel!(particles, Gᵘ, Gᵛ, Gʷ, tracer_tendencies, model.grid, model.tracers) 
 
-    synchronize(device(architecture(model)))
+    KernelAbstractions.synchronize(device(architecture(model)))
 end
 
 @kernel function _update_tendencies!(particles, Gᵘ, Gᵛ, Gʷ, tracer_tendencies, grid, tracers)
@@ -391,10 +420,10 @@ end
 
     sf = particles.scalefactor[p]
 
-    n_nodes = size(particles.positions_ijk[p], 1)
+    n_nodes = size(particles.positions_ijk, 2)
 
     for n in 1:n_nodes
-        i, j, k_top = particles.positions_ijk[p][n, :]
+        i, j, k_top = particles.positions_ijk[p, n, :]
 
         total_volume = sum([volume(i, j, k, grid, Center(), Center(), Center()) for k in k_base:k_top]) 
 
