@@ -427,7 +427,11 @@ end
         j = particles.positions_ijk[p, n, 2]
         k_top = particles.positions_ijk[p, n, 3]
 
-        total_volume = sum([volume(i, j, k, grid, Center(), Center(), Center()) for k in k_base:k_top]) 
+        total_volume = 0
+        
+        for k in k_base:k_top
+            total_volume += volume(i, j, k, grid, Center(), Center(), Center())
+        end
 
         total_mass = total_volume * particles.kinematics.water_density
 
