@@ -267,7 +267,7 @@ length(particles::GiantKelp) = length(particles.holdfast_x)
 
 size(particles::GiantKelp, dim::Int) = size(particles.positions, dim)
 
-summary(particles::GiantKelp) = string("Giant kelp (Macrocystis pyrifera) model with $(length(particles)) individuals of $(size(particles.positions[1], 1)) nodes.")
+summary(particles::GiantKelp) = string("Giant kelp (Macrocystis pyrifera) model with $(length(particles)) individuals of $(size(particles.positions, 2)) nodes.")
 show(io::IO, particles::GiantKelp) = print(io, string(summary(particles), " \n",
                                                       " Base positions:\n", 
                                                       " - x ∈ [$(minimum(particles.holdfast_x)), $(maximum(particles.holdfast_x))]\n",
@@ -387,7 +387,7 @@ summary(::NothingBGC) = string("No biogeochemistry")
 show(io, ::NothingBGC) = print(io, string("No biogeochemistry"))
 show(::NothingBGC) = string("No biogeochemistry") # show be removed when show for `Biogeochemistry` is corrected
 
-include("atomix_hack.jl")
+include("atomic_operations.jl")
 
 include("timesteppers.jl")
 include("kinematics/Kinematics.jl")
@@ -442,7 +442,7 @@ end
 
                 forcing_tracers = @inbounds [tracers[tracer_name][i, j, k] for tracer_name in forcing.field_dependencies if tracer_name in keys(tracers)]
 
-                Atomix.@atomic tracer_tendency[i, j, k] += total_scaling * forcing.func(forcing_tracers..., forcing_arguments..., forcing.parameters)
+                atomic_add!(tracer_tendency, i, j, k, total_scaling * forcing.func(forcing_tracers..., forcing_arguments..., forcing.parameters))
             end
         end
 
