@@ -44,16 +44,16 @@ end
     Cᵃ = kinematics.added_mass_coefficient
     τ = kinematics.damping_timescale
 
-    x⃗ⁱ = @inbounds positions[p, n, :]
-    u⃗ⁱ = @inbounds velocities[p, n, :]
+    x⃗ⁱ = @inbounds [positions[p, n, 1], positions[p, n, 2], positions[p, n, 3]]
+    u⃗ⁱ = @inbounds [velocities[p, n, 1], velocities[p, n, 2], velocities[p, n, 3]]
 
     # can we eliminate this branching logic
     if n == 1
         x⃗⁻ = zeros(3)
         u⃗ⁱ⁻¹ = zeros(3)
     else
-        x⃗⁻ = @inbounds positions[p, n - 1, :]
-        u⃗ⁱ⁻¹ = @inbounds velocities[p, n - 1, :]
+        x⃗⁻ = @inbounds [positions[p, n-1, 1], positions[p, n-1, 2], positions[p, n-1, 3]]
+        u⃗ⁱ⁻¹ = @inbounds [velocities[p, n-1, 1], velocities[p, n-1, 2], velocities[p, n-1, 3]]
     end
 
     Δx⃗ = x⃗ⁱ - x⃗⁻
@@ -85,7 +85,11 @@ end
     j = Int(j + 1)
     k = Int(k + 1)
 
-    @inbounds positions_ijk[p, n, :] = [i, j, k]
+    @inbounds begin
+        positions_ijk[p, n, 1] = i
+        positions_ijk[p, n, 2] = j
+        positions_ijk[p, n, 3] = k
+    end
 
     _, k1 = @inbounds ifelse(n == 1, (0.0, 1), modf(1 +  fractional_z_index(positions[p, n - 1, 3] + z_holdfast[p], (Center(), Center(), Center()), water_velocities.u.grid)))
 
@@ -106,14 +110,14 @@ end
 
     Fᴰ = 0.5 * ρₒ * (Cᵈˢ * Aˢ + Cᵈᵇ * Aᵇ) * sᵣₑₗ * u⃗ᵣₑₗ
 
-    if n == @inbounds size(relaxed_lengths, 2)
+    if n == size(relaxed_lengths, 2)
         x⃗⁺ = x⃗ⁱ 
         u⃗ⁱ⁺¹ = u⃗ⁱ
         Aᶜ⁺ = 0.0 
         l₀⁺ = @inbounds relaxed_lengths[p, n] 
     else
-        x⃗⁺ = @inbounds positions[p, n + 1, :]
-        u⃗ⁱ⁺¹ = @inbounds velocities[p, n + 1, :]
+        x⃗⁺ = @inbounds [positions[p, n + 1, 1], positions[p, n + 1, 2], positions[p, n + 1, 3]]
+        u⃗ⁱ⁺¹ = @inbounds [velocities[p, n + 1, 1], velocities[p, n + 1, 2], velocities[p, n + 1, 3]]
         Aᶜ⁺ = @inbounds π * stipe_radii[p, n + 1] ^ 2
         l₀⁺ = @inbounds relaxed_lengths[p, n + 1]
     end
