@@ -13,7 +13,7 @@ segment_unstretched_length = [10., ]
 
 @inline analytical_concentration(t, scalefactor, parameters) = (1 - exp(- t * scalefactor / parameters.uptake_timescale / parameters.n_nodes / 10))
 
-C = Forcing(tracer_release; field_dependencies = (:C, ), parameters = (base_value = 1., uptake_timescale = 1hour, n_nodes = 2))
+C = Forcing(tracer_release; field_dependencies = (1, ), parameters = (base_value = 1., uptake_timescale = 1hour, n_nodes = 2))
 
 @testset "Tracer release" begin
     kelp = GiantKelp(; grid,
