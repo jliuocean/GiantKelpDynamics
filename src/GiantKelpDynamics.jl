@@ -11,6 +11,8 @@ export GiantKelp, NothingBGC, RK3, Euler, UtterDenny
 
 using Adapt, KernelAbstractions, Atomix, CUDA
 
+using Oceananigans.CPU
+
 using KernelAbstractions.Extras: @unroll
 using OceanBioME.Particles: BiogeochemicalParticles
 using Oceananigans: Center
