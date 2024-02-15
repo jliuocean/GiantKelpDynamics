@@ -15,16 +15,16 @@ segment_unstretched_length = [10., ]
     return (parameters.base_value - C) / parameters.uptake_timescale / parameters.n_nodes
 end
 
-@inline analytical_concentration(t, scalefactor, parameters) = (1 - exp(- t * scalefactor / parameters.uptake_timescale / parameters.n_nodes / 10))
+@inline analytical_concentration(t, scalefactor, parameters) = (1 - exp(- t * scalefactor / parameters.uptake_timescale / parameters.n_nodes / 9))
 
-C = Forcing(tracer_release; parameters = (base_value = 1., uptake_timescale = 1hour, n_nodes = 2))
+C = Forcing(tracer_release; parameters = (base_value = 1., uptake_timescale = 1hour, n_nodes = number_nodes))
 
 @testset "Tracer release" begin
     kelp = GiantKelp(; grid,
-                    holdfast_x, holdfast_y, holdfast_z,
-                    number_nodes,
-                    segment_unstretched_length,
-                    tracer_forcing = (; C))
+                       holdfast_x, holdfast_y, holdfast_z,
+                       number_nodes,
+                       segment_unstretched_length,
+                       tracer_forcing = (; C))
 
     model = NonhydrostaticModel(; grid, 
                                 tracers = (:C, ),
@@ -44,7 +44,6 @@ C = Forcing(tracer_release; parameters = (base_value = 1., uptake_timescale = 1h
         time_step!(model, Δt)
         push!(concentration_record, copy(model.tracers.C[6, 6, 10]))
     end
-
 
     @test all([isapprox(conc, analytical_concentration(n * Δt, 1, C.parameters), atol = 0.01) for (n, conc) in enumerate(concentration_record)])
 
@@ -68,9 +67,9 @@ C = Forcing(tracer_release; parameters = (base_value = 1., uptake_timescale = 1h
 
     concentration_record = Float64[]
 
-    Δt = 100.
+    Δt = 50.
 
-    CUDA.@allowscalar for n in 1:500
+    CUDA.@allowscalar for n in 1:1000
         time_step!(model, Δt)
         push!(concentration_record, copy(model.tracers.C[6, 6, 10]))
     end

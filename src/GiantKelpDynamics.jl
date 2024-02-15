@@ -451,11 +451,11 @@ end
         # maybe optimal to invert the order of these loops
         for (tracer_idx, forcing) in enumerate(tracer_forcings)
             tracer_tendency = tracer_tendencies[tracer_idx]
-            forcing_value = forcing.func(i, j, k, p, n, grid, clock, particles, tracers, forcing.parameters)
 
+            # if we change func to just p, n dependencies we can just calculate it once
             for k in k1:k2
                 total_scaling = sf * volume(i, j, k, grid, Center(), Center(), Center()) / total_volume
-                atomic_add!(tracer_tendency, i, j, k, total_scaling * forcing_value)
+                atomic_add!(tracer_tendency, i, j, k, total_scaling * forcing.func(i, j, k, p, n, grid, clock, particles, tracers, forcing.parameters))
             end
         end
 
