@@ -1,7 +1,7 @@
 name = "GiantKelpDynamics"
 uuid = "db8bd12b-bb4c-49ee-ad86-22fc2972064e"
 authors = ["Jago Stong-Wright <jagoosw@protonmail.com>"]
-version = "0.2.0"
+version = "0.3.0"
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
@@ -19,7 +19,7 @@ OffsetArrays = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
 Adapt = "^3.6.2"
 KernelAbstractions = "^0.9.10"
 OceanBioME = "0.9"
-Oceananigans = "0.90"
+Oceananigans = "0.90.6"
 julia = "1.9"
 
 [extras]
