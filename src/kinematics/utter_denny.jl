@@ -106,15 +106,18 @@ end
     positions_ijk[p, n, 2] = j
     positions_ijk[p, n, 3] = k
 
-    ii⁻, jj⁻, kk⁻ = fractional_indices((x⁻ + x_holdfast[p], y⁻ + y_holdfast[p], z⁻ + y_holdfast[p]), grid, Center(), Center(), Center())
+    _, _, kk⁻ = fractional_indices((x⁻ + x_holdfast[p], y⁻ + y_holdfast[p], z⁻ + y_holdfast[p]), grid, Center(), Center(), Center())
 
     iz⁻ = interpolator(kk⁻)
 
-    k1 = get_node(TZ(), Int(ifelse(iz[3] < 0.5, iz⁻[1], iz⁻[2])), grid.Nz)
+    k⁻ = get_node(TZ(), Int(ifelse(iz[3] < 0.5, iz⁻[1], iz⁻[2])), grid.Nz)
 
-    uʷ = mean_squared_field(water_velocities[1], i, j, k1, k)
-    vʷ = mean_squared_field(water_velocities[2], i, j, k1, k)
-    wʷ = mean_squared_field(water_velocities[3], i, j, k1, k)
+    k1 = min(k⁻, k)
+    k2 = max(k⁻, k)
+
+    uʷ = mean_squared_field(water_velocities[1], i, j, k1, k2)
+    vʷ = mean_squared_field(water_velocities[2], i, j, k1, k2)
+    wʷ = mean_squared_field(water_velocities[3], i, j, k1, k2)
 
     uʳ = uʷ - uⁱ
     vʳ = vʷ - vⁱ
@@ -122,9 +125,9 @@ end
 
     sʳ = sqrt(uʳ^2 + vʳ^2 + wʳ^2)
 
-    ∂ₜuʷ = mean_squared_field(water_accelerations[1], i, j, k1, k)
-    ∂ₜvʷ = mean_squared_field(water_accelerations[2], i, j, k1, k)
-    ∂ₜwʷ = mean_squared_field(water_accelerations[3], i, j, k1, k)
+    ∂ₜuʷ = mean_squared_field(water_accelerations[1], i, j, k1, k2)
+    ∂ₜvʷ = mean_squared_field(water_accelerations[2], i, j, k1, k2)
+    ∂ₜwʷ = mean_squared_field(water_accelerations[3], i, j, k1, k2)
 
     θ = acos(min(1, abs(uʳ * Δx + vʳ * Δy + wʳ * Δz) / (sʳ * l + eps(0.0))))
     Aˢ = 2 * rˢ * l * abs(sin(θ)) + π * rˢ * abs(cos(θ))
@@ -167,13 +170,15 @@ end
     l⁻ = sqrt(Δx⁻^2 + Δy⁻^2 + Δz⁻^2)
     l⁺ = sqrt(Δx⁺^2 + Δy⁺^2 + Δz⁺^2)
 
-    T⁻₁ = tension(l⁻, l₀⁻, Aᶜ⁻, spring_constant, spring_exponent) * Δx⁻ / (l⁻ + eps(0.0))
-    T⁻₂ = tension(l⁻, l₀⁻, Aᶜ⁻, spring_constant, spring_exponent) * Δy⁻ / (l⁻ + eps(0.0))
-    T⁻₃ = tension(l⁻, l₀⁻, Aᶜ⁻, spring_constant, spring_exponent) * Δz⁻ / (l⁻ + eps(0.0))
+    T⁻  = tension(l⁻, l₀⁻, Aᶜ⁻, spring_constant, spring_exponent)
+    T⁻₁ = T⁻ * Δx⁻ / (l⁻ + eps(0.0))
+    T⁻₂ = T⁻ * Δy⁻ / (l⁻ + eps(0.0))
+    T⁻₃ = T⁻ * Δz⁻ / (l⁻ + eps(0.0))
 
-    T⁺₁ = tension(l⁺, l₀⁺, Aᶜ⁺, spring_constant, spring_exponent) * Δx⁺ / (l⁺ + eps(0.0))
-    T⁺₂ = tension(l⁺, l₀⁺, Aᶜ⁺, spring_constant, spring_exponent) * Δy⁺ / (l⁺ + eps(0.0))
-    T⁺₃ = tension(l⁺, l₀⁺, Aᶜ⁺, spring_constant, spring_exponent) * Δz⁺ / (l⁺ + eps(0.0))
+    T⁺ = tension(l⁺, l₀⁺, Aᶜ⁺, spring_constant, spring_exponent)
+    T⁺₁ = T⁺ * Δx⁺ / (l⁺ + eps(0.0))
+    T⁺₂ = T⁺ * Δy⁺ / (l⁺ + eps(0.0))
+    T⁺₃ = T⁺ * Δz⁺ / (l⁺ + eps(0.0))
 
     # inertial force
     Fⁱ₁ = ρₒ * (Vᵐ + Vᵖ) * ∂ₜuʷ
@@ -183,8 +188,8 @@ end
     # add it all together
 
     accelerations[p, n, 1] = (Fᴰ₁ + T⁻₁ + T⁺₁ + Fⁱ₁) / mᵉ - velocities[p, n, 1] / τ
-    accelerations[p, n, 2] = (Fᴰ₂ + T⁻₂ + T⁺₂ + Fⁱ₂) / mᵉ - velocities[p, n, 1] / τ
-    accelerations[p, n, 3] = (Fᴰ₃ + T⁻₃ + T⁺₃ + Fⁱ₃ + Fᴮ) / mᵉ - velocities[p, n, 1] / τ
+    accelerations[p, n, 2] = (Fᴰ₂ + T⁻₂ + T⁺₂ + Fⁱ₂) / mᵉ - velocities[p, n, 2] / τ
+    accelerations[p, n, 3] = (Fᴰ₃ + T⁻₃ + T⁺₃ + Fⁱ₃ + Fᴮ) / mᵉ - velocities[p, n, 3] / τ
 
     drag_forces[p, n, 1] = Fᴰ₁
     drag_forces[p, n, 2] = Fᴰ₂

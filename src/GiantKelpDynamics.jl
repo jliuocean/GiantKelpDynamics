@@ -429,13 +429,18 @@ end
     n_nodes = size(particles.positions_ijk, 2)
 
     for n in 1:n_nodes
+        k_base += 1
+
         i = particles.positions_ijk[p, n, 1]
         j = particles.positions_ijk[p, n, 2]
         k_top = particles.positions_ijk[p, n, 3]
 
         total_volume = 0
 
-        for k in k_base:k_top
+        k1 = min(k_base, k_top)
+        k2 = max(k_base, k_top)
+
+        for k in k1:k2
             total_volume += volume(i, j, k, grid, Center(), Center(), Center())
         end
 
@@ -444,12 +449,13 @@ end
         apply_drag!(particles, Gᵘ, Gᵛ, Gʷ, i, j, k_top, k_base, total_mass, p, n)
 
         # maybe optimal to invert the order of these loops
-        for k in k_base:k_top
-            total_scaling = sf * volume(i, j, k, grid, Center(), Center(), Center()) / total_volume
+        for (tracer_idx, forcing) in enumerate(tracer_forcings)
+            tracer_tendency = tracer_tendencies[tracer_idx]
+            forcing_value = forcing.func(i, j, k, p, n, grid, clock, particles, tracers, forcing.parameters)
 
-            for (tracer_idx, forcing) in enumerate(tracer_forcings)
-                tracer_tendency = tracer_tendencies[tracer_idx]
-                atomic_add!(tracer_tendency, i, j, k, total_scaling * forcing.func(i, j, k, p, n, grid, clock, particles, tracers, forcing.parameters))
+            for k in k1:k2
+                total_scaling = sf * volume(i, j, k, grid, Center(), Center(), Center()) / total_volume
+                atomic_add!(tracer_tendency, i, j, k, total_scaling * forcing_value)
             end
         end
 
