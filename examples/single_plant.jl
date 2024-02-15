@@ -40,7 +40,7 @@ model = NonhydrostaticModel(; grid,
 
 # Set the initial positions of the plant nodes (relaxed floating to the surface), and the set an initial water velocity
 
-set!(kelp, positions = [0. 0. 3.; 0. 0. 6.; 0. 0. 8.; 3. 0. 8.; 6. 0. 8.; 9. 0. 8.; 12. 0. 8.; 15. 0. 8.;])
+set!(kelp, positions = [0. 0. 3.; 0. 0. 6.; 0. 0. 8.; -3. 0. 8.; -6. 0. 8.; -9. 0. 8.; -12. 0. 8.; -9. 0. 8.;])
 
 set!(model, u = 0.1)
 
@@ -59,7 +59,7 @@ simulation.output_writers[:flow] = JLD2OutputWriter(model, model.velocities, ove
 simulation.output_writers[:kelp] = JLD2OutputWriter(model, (; positions = kelp.positions), overwrite_existing = true, filename = "single_kelp.jld2", schedule = TimeInterval(10))
 
 # Run!
-
+#=
 run!(simulation)
 
 # Next we load the data
@@ -115,3 +115,4 @@ end
 
 # ![](single.mp4)
 # In this video the limitations of the simplified drag stencil can be seen (see previous versions for a more complex stencil). It is better suited to the forest application like in the [forest example](@ref forest_example)
+=#
