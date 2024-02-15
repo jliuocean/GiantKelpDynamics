@@ -9,11 +9,15 @@ max_Δt = 1.0
 number_nodes = 1
 segment_unstretched_length = [10., ]
 
-@inline tracer_release(C, parameters) = (parameters.base_value - C) / parameters.uptake_timescale / parameters.n_nodes
+@inline function tracer_release(i, j, k, p, n, grid, clock, particles, tracers, parameters)
+    C = tracers.C[i, j, k]
+    
+    return (parameters.base_value - C) / parameters.uptake_timescale / parameters.n_nodes
+end
 
 @inline analytical_concentration(t, scalefactor, parameters) = (1 - exp(- t * scalefactor / parameters.uptake_timescale / parameters.n_nodes / 10))
 
-C = Forcing(tracer_release; field_dependencies = (1, ), parameters = (base_value = 1., uptake_timescale = 1hour, n_nodes = 2))
+C = Forcing(tracer_release; parameters = (base_value = 1., uptake_timescale = 1hour, n_nodes = 2))
 
 @testset "Tracer release" begin
     kelp = GiantKelp(; grid,
@@ -38,7 +42,7 @@ C = Forcing(tracer_release; field_dependencies = (1, ), parameters = (base_value
 
     for n in 1:500
         time_step!(model, Δt)
-        push!(concentration_record, copy(model.tracers.C[5, 5, 10]))
+        push!(concentration_record, copy(model.tracers.C[6, 6, 10]))
     end
 
 
@@ -68,7 +72,7 @@ C = Forcing(tracer_release; field_dependencies = (1, ), parameters = (base_value
 
     for n in 1:500
         time_step!(model, Δt)
-        push!(concentration_record, copy(model.tracers.C[5, 5, 10]))
+        push!(concentration_record, copy(model.tracers.C[6, 6, 10]))
     end
 
     @test all([isapprox(conc, analytical_concentration(n * Δt, 2, C.parameters), atol = 0.01) for (n, conc) in enumerate(concentration_record)])

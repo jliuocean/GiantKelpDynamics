@@ -155,8 +155,8 @@ Keyword Arguments
 - `kinematics`: the kinematics model specifying the individuals motion
 - `timestepper`: the timestepper to integrate the motion with (at each substep)
 - `max_Δt`: the maximum timestep for integrating the motion
-- `tracer_forcing`: a `NamedTuple` of `Oceananigans.Forcings(func; field_dependencies, parameters)` with functions 
-  of the form `func(field_dependencies..., parameters)` where `field_dependencies` can be particle properties or 
+- `tracer_forcing`: a `NamedTuple` of `Oceananigans.Forcings(func; field_dependencies, parameters)` with for discrete form forcing only. Functions 
+  must be of the form `func(i, j, k, p, n, grid, clock, tracers, particles, parameters)` where `field_dependencies` can be particle properties or 
   fields from the underlying model (tracers or velocities)
 - `custom_dynamics`: function of the form `func(particles, model, bgc, Δt)` to be executed at every timestep after the kelp model properties are updated.
 
@@ -399,7 +399,6 @@ include("atomic_operations.jl")
 include("timesteppers.jl")
 include("kinematics/Kinematics.jl")
 include("drag_coupling.jl")
-include("forcing.jl")
 
 function update_tendencies!(bgc, particles::GiantKelp, model)
     Gᵘ, Gᵛ, Gʷ = @inbounds model.timestepper.Gⁿ[(:u, :v, :w)]
@@ -449,20 +448,13 @@ end
             total_scaling = sf * volume(i, j, k, grid, Center(), Center(), Center()) / total_volume
 
             for (tracer_idx, forcing) in enumerate(tracer_forcings)
-
                 tracer_tendency = tracer_tendencies[tracer_idx]
-
-                forcing_arguments = get_arguments(forcing, particles, p, n)
-
-                #forcing_tracers = @inbounds [tracers[tracer_name][i, j, k] for tracer_name in forcing.field_dependencies]
-
-                atomic_add!(tracer_tendency, i, j, k, total_scaling * forcing.func(forcing_arguments..., forcing.parameters))#(forcing_tracers..., forcing_arguments..., forcing.parameters))
+                atomic_add!(tracer_tendency, i, j, k, total_scaling * forcing.func(i, j, k, p, n, grid, clock, particles, tracers, forcing.parameters))
             end
         end
 
         k_base = k_top
     end
-
 end
 
 end # module GiantKelpDynamics
