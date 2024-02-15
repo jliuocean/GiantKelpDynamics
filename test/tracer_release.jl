@@ -40,7 +40,7 @@ C = Forcing(tracer_release; parameters = (base_value = 1., uptake_timescale = 1h
 
     Δt = 100.
 
-    for n in 1:500
+    CUDA.@allowscalar for n in 1:500
         time_step!(model, Δt)
         push!(concentration_record, copy(model.tracers.C[6, 6, 10]))
     end
@@ -70,7 +70,7 @@ C = Forcing(tracer_release; parameters = (base_value = 1., uptake_timescale = 1h
 
     Δt = 100.
 
-    for n in 1:500
+    CUDA.@allowscalar for n in 1:500
         time_step!(model, Δt)
         push!(concentration_record, copy(model.tracers.C[6, 6, 10]))
     end
