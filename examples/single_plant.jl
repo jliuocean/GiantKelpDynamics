@@ -59,7 +59,7 @@ simulation.output_writers[:flow] = JLD2OutputWriter(model, model.velocities, ove
 simulation.output_writers[:kelp] = JLD2OutputWriter(model, (; positions = kelp.positions), overwrite_existing = true, filename = "single_kelp.jld2", schedule = TimeInterval(10))
 
 # Run!
-#=
+
 run!(simulation)
 
 # Next we load the data
@@ -115,4 +115,3 @@ end
 
 # ![](single.mp4)
 # In this video the limitations of the simplified drag stencil can be seen (see previous versions for a more complex stencil). It is better suited to the forest application like in the [forest example](@ref forest_example)
-=#
