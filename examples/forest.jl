@@ -123,13 +123,13 @@ title = @lift "t = $(prettytime(u.times[$n]))"
 
 ax = Axis(fig[1:3, 1], aspect = DataAspect(); title, ylabel = "y (m)")
 
-hm = heatmap!(ax, xf, yc, u_surface, colorrange = u_lims, colormap = :broc)
+hm = heatmap!(ax, xf, yc, u_surface, colorrange = u_lims, colormap = Reverse(:roma))
 
 arrows!(ax, holdfast_x, holdfast_y, x_position_ends, y_position_ends, color = :black)
 
 ax = Axis(fig[4, 1], limits = (190, 350, -8, 0), aspect = AxisAspect(15), xlabel = "x (m)", ylabel = "z (m)")
 
-hm = heatmap!(ax, xf, zc, u_vert, colorrange = u_lims, colormap = :broc)
+hm = heatmap!(ax, xf, zc, u_vert, colorrange = u_lims, colormap = Reverse(:roma))
 
 Colorbar(fig[1:4, 2], hm, label = "Velocity anomaly (m / s)")
 
