@@ -15,7 +15,7 @@ segment_unstretched_length = [10., ]
     return (parameters.base_value - C) / parameters.uptake_timescale / parameters.n_nodes
 end
 
-@inline analytical_concentration(t, scalefactor, parameters) = (1 - exp(- t * scalefactor / parameters.uptake_timescale / parameters.n_nodes / 9))
+@inline analytical_concentration(t, scalefactor, parameters) = (1 - exp(- t * scalefactor / parameters.uptake_timescale / parameters.n_nodes / 10))
 
 C = Forcing(tracer_release; parameters = (base_value = 1., uptake_timescale = 1hour, n_nodes = number_nodes))
 

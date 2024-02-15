@@ -422,7 +422,7 @@ end
 @kernel function _update_tendencies!(particles, Gᵘ, Gᵛ, Gʷ, tracer_tendencies, grid, tracers, tracer_forcings)
     p = @index(Global)
 
-    k_base = 1
+    k_base = 0
 
     sf = particles.scalefactor[p]
 
