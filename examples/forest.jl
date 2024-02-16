@@ -37,7 +37,8 @@ max_Δt = 1.
 kelp = GiantKelp(; grid,
                    holdfast_x, holdfast_y, holdfast_z,
                    scalefactor, number_nodes, segment_unstretched_length,
-                   max_Δt)
+                   max_Δt,
+                   initial_blade_areas = 3 .* [0.2, 0.8])
 
 @inline sponge(x, y, z) = ifelse(x < 100, 1, 0)
 
@@ -113,7 +114,7 @@ u_vert = @lift interior(u[$n], :, Int(grid.Ny/2), :) .- 0.05
 
 u_surface = @lift interior(u[$n], :, :, grid.Nz) .- 0.05
 
-u_lims = maximum(abs, u .- 0.05) .* (-1, 1)
+u_lims = (-0.06, 0.06)
 
 xf, yc, zc = nodes(u.grid, Face(), Center(), Center())
 
