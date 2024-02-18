@@ -9,12 +9,15 @@ module GiantKelpDynamics
 
 export GiantKelp, NothingBGC, RK3, Euler, UtterDenny
 
-using Adapt, KernelAbstractions
+using Adapt, Atomix, CUDA
+
+using KernelAbstractions: @kernel, @index, synchronize
+using Oceananigans: CPU
 
 using KernelAbstractions.Extras: @unroll
 using OceanBioME.Particles: BiogeochemicalParticles
 using Oceananigans: Center
-using Oceananigans.Architectures: architecture, device
+using Oceananigans.Architectures: architecture, device, arch_array
 using Oceananigans.Biogeochemistry: AbstractContinuousFormBiogeochemistry
 using Oceananigans.Fields: Field, CenterField, VelocityFields
 using Oceananigans.Operators: volume
@@ -152,8 +155,8 @@ Keyword Arguments
 - `kinematics`: the kinematics model specifying the individuals motion
 - `timestepper`: the timestepper to integrate the motion with (at each substep)
 - `max_Δt`: the maximum timestep for integrating the motion
-- `tracer_forcing`: a `NamedTuple` of `Oceananigans.Forcings(func; field_dependencies, parameters)` with functions 
-  of the form `func(field_dependencies..., parameters)` where `field_dependencies` can be particle properties or 
+- `tracer_forcing`: a `NamedTuple` of `Oceananigans.Forcings(func; field_dependencies, parameters)` with for discrete form forcing only. Functions 
+  must be of the form `func(i, j, k, p, n, grid, clock, tracers, particles, parameters)` where `field_dependencies` can be particle properties or 
   fields from the underlying model (tracers or velocities)
 - `custom_dynamics`: function of the form `func(particles, model, bgc, Δt)` to be executed at every timestep after the kelp model properties are updated.
 
@@ -188,7 +191,7 @@ function GiantKelp(; grid,
                                                                             segment_unstretched_length ./ sum(segment_unstretched_length)),
                      kinematics = UtterDenny(),
                      timestepper = Euler(),
-                     max_Δt = Inf,
+                     max_Δt = 1.,
                      tracer_forcing = NamedTuple(),
                      custom_dynamics = nothingfunc)
 
@@ -202,21 +205,26 @@ function GiantKelp(; grid,
     scalefactor = arch_array(arch, scalefactor)
 
     
-    velocities = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
-    positions = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
+    velocities = arch_array(arch, zeros(number_kelp, number_nodes, 3))
+    positions = arch_array(arch, zeros(number_kelp, number_nodes, 3))
 
-    positions_ijk = [arch_array(arch, ones(Int, number_nodes, 3)) for p in 1:number_kelp]
+    positions_ijk = arch_array(arch, ones(Int, number_kelp, number_nodes, 3))
 
 
-    relaxed_lengths = [arch_array(arch, ones(number_nodes) .* segment_unstretched_length) for p in 1:number_kelp]
-    stipe_radii = [arch_array(arch, ones(number_nodes) .* initial_stipe_radii) for p in 1:number_kelp]
-    blade_areas = [arch_array(arch, ones(number_nodes) .* initial_blade_areas) for p in 1:number_kelp]
-    pneumatocyst_volumes = [arch_array(arch, ones(number_nodes) .* initial_pneumatocyst_volume) for p in 1:number_kelp]
+    relaxed_lengths = arch_array(arch, ones(number_kelp, number_nodes))
+    stipe_radii = arch_array(arch, ones(number_kelp, number_nodes))
+    blade_areas = arch_array(arch, ones(number_kelp, number_nodes))
+    pneumatocyst_volumes = arch_array(arch, ones(number_kelp, number_nodes))
 
-    accelerations = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
-    old_velocities = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
-    old_accelerations = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
-    drag_forces = [arch_array(arch, zeros(number_nodes, 3)) for p in 1:number_kelp]
+    set!(relaxed_lengths, segment_unstretched_length)
+    set!(stipe_radii, initial_stipe_radii)
+    set!(blade_areas, initial_blade_areas)
+    set!(pneumatocyst_volumes, initial_pneumatocyst_volume)
+
+    accelerations = arch_array(arch, zeros(number_kelp, number_nodes, 3))
+    old_velocities = arch_array(arch, zeros(number_kelp, number_nodes, 3))
+    old_accelerations = arch_array(arch, zeros(number_kelp, number_nodes, 3))
+    drag_forces = arch_array(arch, zeros(number_kelp, number_nodes, 3))
 
     return GiantKelp(holdfast_x, holdfast_y, holdfast_z,
                      scalefactor,
@@ -260,7 +268,9 @@ adapt_structure(to, kelp::GiantKelp) = GiantKelp(adapt(to, kelp.holdfast_x),
 size(particles::GiantKelp) = size(particles.holdfast_x)
 length(particles::GiantKelp) = length(particles.holdfast_x)
 
-summary(particles::GiantKelp) = string("Giant kelp (Macrocystis pyrifera) model with $(length(particles)) individuals of $(size(particles.positions[1], 1)) nodes.")
+size(particles::GiantKelp, dim::Int) = size(particles.positions, dim)
+
+summary(particles::GiantKelp) = string("Giant kelp (Macrocystis pyrifera) model with $(length(particles)) individuals of $(size(particles.positions, 2)) nodes.")
 show(io::IO, particles::GiantKelp) = print(io, string(summary(particles), " \n",
                                                       " Base positions:\n", 
                                                       " - x ∈ [$(minimum(particles.holdfast_x)), $(maximum(particles.holdfast_x))]\n",
@@ -290,34 +300,66 @@ Giant kelp (Macrocystis pyrifera) model with 2 individuals of 2 nodes.
 
 julia> set!(kelp, positions = [0 0 8; 8 0 8])
 
-julia> set!(kelp, positions = [[0 0 8; 8 0 8], [0 0 -8; 8 0 -8]])
+julia> initial_positions = zeros(2, 2, 3);
+
+julia> initial_positions[1, :, :] = [0 0 8; 8 0 8];
+
+julia> initial_positions[1, :, :] = [0 0 -8; 8 0 -8];
+
+julia> set!(kelp, positions = initial_positions)
 
 ```
 """
 function set!(kelp::GiantKelp; kwargs...)
     for (fldname, value) in kwargs
         ϕ = getproperty(kelp, fldname)
-        if size(value) == size(ϕ) && size(value[1]) == size(ϕ[1])
-            ϕ .= value
-        elseif size(value) == size(ϕ[1])
-            [ϕₚ .= value for ϕₚ in ϕ]
-        else
-            error("Size missmatch")
-        end
+        set!(ϕ, value)
     end
 end
 
+const NotAField = Union{Array, CuArray}
+
+set!(ϕ::NotAField, value::Number) = ϕ .= value
+set!(ϕ::A, value::A) where A = ϕ.= value
+
+function set!(ϕ, value)
+    if length(size(value)) == 1
+        set_1d!(ϕ, value)
+    elseif length(size(value)) == 2
+        set_2d!(ϕ, value)
+    elseif size(value) == size(ϕ)
+        set!(ϕ, arch_array(architecture(ϕ), value))
+    else
+        error("Failed to set property with size $(size(ϕ)) to values with size $(size(value))")
+    end
+end
+
+function set_1d!(ϕ, value)
+    for n in eachindex(value)
+        ϕ[:, n] .= value[n]
+    end
+end
+
+function set_2d!(ϕ, value)
+    for n in 1:size(value, 1), d in 1:size(value, 2)
+        ϕ[:, n, d] .= value[n, d]
+    end
+end
+
+
 # for output writer
 
-fetch_output(output::Union{Vector{<:Matrix}, Vector{<:Vector}}, model) = output
+const PropertyArray = Union{Array, CuArray}
 
-function convert_output(output::Union{Vector{<:Matrix}, Vector{<:Vector}}, writer)
-    if architecture(output) isa GPU
-        output_array = writer.array_type(undef, size(output)...)
-        copyto!(output_array, output)
-    else
-        output_array = [convert(writer.array_type, opt) for opt in output]
-    end
+fetch_output(output::Array, model) = output
+
+fetch_output(output::CuArray, model) = arch_array(CPU(), output)
+
+convert_output(output::Array, writer) = output
+
+function convert_output(output::CuArray, writer)
+    output_array = writer.array_type(undef, size(output)...)
+    copyto!(output_array, output)
 
     return output_array
 end
@@ -358,53 +400,72 @@ summary(::NothingBGC) = string("No biogeochemistry")
 show(io, ::NothingBGC) = print(io, string("No biogeochemistry"))
 show(::NothingBGC) = string("No biogeochemistry") # show be removed when show for `Biogeochemistry` is corrected
 
+include("atomic_operations.jl")
+
 include("timesteppers.jl")
 include("kinematics/Kinematics.jl")
 include("drag_coupling.jl")
-include("forcing.jl")
 
 function update_tendencies!(bgc, particles::GiantKelp, model)
     Gᵘ, Gᵛ, Gʷ = @inbounds model.timestepper.Gⁿ[(:u, :v, :w)]
 
     tracer_tendencies = @inbounds model.timestepper.Gⁿ[keys(particles.tracer_forcing)]
 
-    n_nodes = @inbounds size(particles.positions[1], 1)
+    n_particles = size(particles, 1)
+    worksize = n_particles
+    workgroup = min(256, worksize)
 
     #####
     ##### Apply the tracer tendencies from each particle
     ####
-    # we have todo this serially for each particle otherwise we get unsafe memory access to the tendency field
-    @inbounds @unroll for p in 1:length(particles)
-        k_base = 1
+    update_tendencies_kernel! = _update_tendencies!(device(model.architecture), workgroup, worksize)
 
-        sf = particles.scalefactor[p]
+    update_tendencies_kernel!(particles, Gᵘ, Gᵛ, Gʷ, tracer_tendencies, model.grid, model.tracers, values(particles.tracer_forcing)) 
 
-        @unroll for n in 1:n_nodes
-            i, j, k = particles.positions_ijk[p][n, :]
-            vertical_spread = max(1, k - k_base  + 1)
+    synchronize(device(architecture(model)))
+end
 
-            # I want to remove the water density thing here to be computed correctly, not not sure how to at the moment
-            cell_mass = volume(i, j, k, model.grid, Center(), Center(), Center()) * vertical_spread * particles.kinematics.water_density
+@kernel function _update_tendencies!(particles, Gᵘ, Gᵛ, Gʷ, tracer_tendencies, grid, tracers, tracer_forcings)
+    p = @index(Global)
 
-            apply_drag!(particles, Gᵘ, Gᵛ, Gʷ, i, j, k, k_base, cell_mass, p, n)
+    k_base = 0
 
-            @unroll for kidx in k_base:k
-                total_scaling = sf / vertical_spread 
+    sf = particles.scalefactor[p]
 
-                for (tracer_name, forcing) in pairs(particles.tracer_forcing)
+    n_nodes = size(particles.positions_ijk, 2)
 
-                    tracer_tendency = tracer_tendencies[tracer_name]
+    for n in 1:n_nodes
+        k_base += 1
 
-                    forcing_arguments = get_arguments(forcing, particles, p, n)
+        i = particles.positions_ijk[p, n, 1]
+        j = particles.positions_ijk[p, n, 2]
+        k_top = particles.positions_ijk[p, n, 3]
 
-                    forcing_tracers = @inbounds [model.tracers[tracer_name][i, j, kidx] for tracer_name in forcing.field_dependencies if tracer_name in keys(model.tracers)]
+        total_volume = 0
 
-                    tracer_tendency[i, j, kidx] += total_scaling * forcing.func(forcing_tracers..., forcing_arguments..., forcing.parameters)
-                end
-            end
+        k1 = min(k_base, k_top)
+        k2 = max(k_base, k_top)
 
-            k_base = k # maybe this should be k + 1
+        for k in k1:k2
+            total_volume += volume(i, j, k, grid, Center(), Center(), Center())
         end
+
+        total_mass = total_volume * particles.kinematics.water_density
+
+        apply_drag!(particles, Gᵘ, Gᵛ, Gʷ, i, j, k_top, k_base, total_mass, p, n)
+
+        # maybe optimal to invert the order of these loops
+        for (tracer_idx, forcing) in enumerate(tracer_forcings)
+            tracer_tendency = tracer_tendencies[tracer_idx]
+
+            # if we change func to just p, n dependencies we can just calculate it once
+            for k in k1:k2
+                total_scaling = sf * volume(i, j, k, grid, Center(), Center(), Center()) / total_volume
+                atomic_add!(tracer_tendency, i, j, k, total_scaling * forcing.func(i, j, k, p, n, grid, clock, particles, tracers, forcing.parameters))
+            end
+        end
+
+        k_base = k_top
     end
 end
 

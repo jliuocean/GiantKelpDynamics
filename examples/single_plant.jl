@@ -27,7 +27,7 @@ kelp = GiantKelp(; grid,
 
 @inline sponge(x, y, z) = ifelse(x < 10, 1, 0)
 
-u = Relaxation(; rate = 1/20, target = 0.2, mask = sponge)
+u = Relaxation(; rate = 1/20, target = 0.1, mask = sponge)
 v = Relaxation(; rate = 1/20, mask = sponge)
 w = Relaxation(; rate = 1/20, mask = sponge)
 
@@ -40,9 +40,9 @@ model = NonhydrostaticModel(; grid,
 
 # Set the initial positions of the plant nodes (relaxed floating to the surface), and the set an initial water velocity
 
-set!(kelp, positions = [0. 0. 3.; 0. 0. 6.; 0. 0. 8.; 3. 0. 8.; 6. 0. 8.; 9. 0. 8.; 12. 0. 8.; 15. 0. 8.;])
+set!(kelp, positions = [0. 0. 3.; 0. 0. 6.; 0. 0. 8.; -3. 0. 8.; -6. 0. 8.; -9. 0. 8.; -12. 0. 8.; -9. 0. 8.;])
 
-set!(model, u = 0.2)
+set!(model, u = 0.1)
 
 # Setup the simulaiton to save the flow and kelp positions
 
@@ -71,7 +71,7 @@ file = jldopen("single_kelp.jld2")
 
 iterations = keys(file["timeseries/t"])
 
-positions = [file["timeseries/positions/$it"][1] for it in iterations]
+positions = [file["timeseries/positions/$it"] for it in iterations]
 
 close(file)
 
@@ -83,13 +83,11 @@ nothing
 
 n = Observable(1)
 
-x_position = @lift positions[$n][:, 1] .+ 20
-y_position = @lift positions[$n][:, 2] .+ 4
-z_position = @lift positions[$n][:, 3] .- 8
+x_position = @lift positions[$n][1, :, 1] .+ 20
+y_position = @lift positions[$n][1, :, 2] .+ 4
+z_position = @lift positions[$n][1, :, 3] .- 8
 
 u_vert = @lift interior(u[$n], :, Int(grid.Ny / 2), :)
-
-u_lims = (0, maximum(u[:, 16, :, :]))
 
 u_surface = @lift interior(u[$n], :, :, grid.Nz)
 
@@ -101,15 +99,15 @@ title = @lift "t = $(prettytime(u.times[$n]))"
 
 ax = Axis(fig[1, 1], aspect = DataAspect(); title, ylabel = "z (m)")
 
-hm = heatmap!(ax, xf, zc, u_vert, colorrange = u_lims)
+hm = heatmap!(ax, xf, zc, u_vert, colormap = :lajolla)
 
-scatter!(ax, x_position, z_position)
+scatter!(ax, x_position, z_position, color = :black)
 
 ax = Axis(fig[2, 1], aspect = DataAspect(), xlabel = "x (m)", ylabel = "y (m)")
 
-hm = heatmap!(ax, xf, yc, u_surface, colorrange = u_lims)
+hm = heatmap!(ax, xf, yc, u_surface, colormap = :lajolla)
 
-scatter!(ax, x_position, y_position)
+scatter!(ax, x_position, y_position, color = :black)
 
 record(fig, "single.mp4", 1:length(times); framerate = 10) do i; 
     n[] = i

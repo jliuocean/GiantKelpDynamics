@@ -37,11 +37,12 @@ max_Δt = 1.
 kelp = GiantKelp(; grid,
                    holdfast_x, holdfast_y, holdfast_z,
                    scalefactor, number_nodes, segment_unstretched_length,
-                   max_Δt)
+                   max_Δt,
+                   initial_blade_areas = 3 .* [0.2, 0.8])
 
 @inline sponge(x, y, z) = ifelse(x < 100, 1, 0)
 
-u = Relaxation(; rate = 1/200, target = 0.2, mask = sponge)
+u = Relaxation(; rate = 1/200, target = 0.05, mask = sponge)
 v = Relaxation(; rate = 1/200, mask = sponge)
 w = Relaxation(; rate = 1/200, mask = sponge)
 
@@ -97,23 +98,23 @@ nothing
 
 n = Observable(1)
 
-x_position_first = @lift vec([positions[$n][p][1, 1] for (p, x₀) in enumerate(holdfast_x)])
-z_position_first = @lift vec([positions[$n][p][1, 3] for (p, z₀) in enumerate(holdfast_z)])
+x_position_first = @lift vec([positions[$n][p, 1, 1] for (p, x₀) in enumerate(holdfast_x)])
+z_position_first = @lift vec([positions[$n][p, 1, 3] for (p, z₀) in enumerate(holdfast_z)])
 
-abs_x_position_first = @lift vec([positions[$n][p][1, 1] + x₀ for (p, x₀) in enumerate(holdfast_x)])
-abs_z_position_first = @lift vec([positions[$n][p][1, 3] + z₀ for (p, z₀) in enumerate(holdfast_z)])
+abs_x_position_first = @lift vec([positions[$n][p, 1, 1] + x₀ for (p, x₀) in enumerate(holdfast_x)])
+abs_z_position_first = @lift vec([positions[$n][p, 1, 3] + z₀ for (p, z₀) in enumerate(holdfast_z)])
 
-x_position_ends = @lift vec([positions[$n][p][2, 1] for (p, x₀) in enumerate(holdfast_x)])
-y_position_ends = @lift vec([positions[$n][p][2, 2] for (p, y₀) in enumerate(holdfast_y)])
+x_position_ends = @lift vec([positions[$n][p, 2, 1] for (p, x₀) in enumerate(holdfast_x)])
+y_position_ends = @lift vec([positions[$n][p, 2, 2] for (p, y₀) in enumerate(holdfast_y)])
 
-rel_x_position_ends = @lift vec([positions[$n][p][2, 1] - positions[$n][p][1, 1] for (p, x₀) in enumerate(holdfast_x)])
-rel_z_position_ends = @lift vec([positions[$n][p][2, 3] - positions[$n][p][1, 3] for (p, z₀) in enumerate(holdfast_z)])
+rel_x_position_ends = @lift vec([positions[$n][p, 2, 1] - positions[$n][p, 1, 1] for (p, x₀) in enumerate(holdfast_x)])
+rel_z_position_ends = @lift vec([positions[$n][p, 2, 3] - positions[$n][p, 1, 3] for (p, z₀) in enumerate(holdfast_z)])
 
-u_vert = @lift interior(u[$n], :, Int(grid.Ny/2), :) .- 0.2
+u_vert = @lift interior(u[$n], :, Int(grid.Ny/2), :) .- 0.05
 
-u_surface = @lift interior(u[$n], :, :, grid.Nz) .- 0.2
+u_surface = @lift interior(u[$n], :, :, grid.Nz) .- 0.05
 
-u_lims = maximum(abs, u .- 0.2) .* (-1, 1)
+u_lims = (-0.06, 0.06)
 
 xf, yc, zc = nodes(u.grid, Face(), Center(), Center())
 
@@ -123,13 +124,13 @@ title = @lift "t = $(prettytime(u.times[$n]))"
 
 ax = Axis(fig[1:3, 1], aspect = DataAspect(); title, ylabel = "y (m)")
 
-hm = heatmap!(ax, xf, yc, u_surface, colorrange = u_lims, colormap = :roma)
+hm = heatmap!(ax, xf, yc, u_surface, colorrange = u_lims, colormap = Reverse(:roma))
 
 arrows!(ax, holdfast_x, holdfast_y, x_position_ends, y_position_ends, color = :black)
 
 ax = Axis(fig[4, 1], limits = (190, 350, -8, 0), aspect = AxisAspect(15), xlabel = "x (m)", ylabel = "z (m)")
 
-hm = heatmap!(ax, xf, zc, u_vert, colorrange = u_lims, colormap = :roma)
+hm = heatmap!(ax, xf, zc, u_vert, colorrange = u_lims, colormap = Reverse(:roma))
 
 Colorbar(fig[1:4, 2], hm, label = "Velocity anomaly (m / s)")
 

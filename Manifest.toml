@@ -2,7 +2,7 @@
 
 julia_version = "1.9.3"
 manifest_format = "2.0"
-project_hash = "2c2ea9c1855458493a168d7757362202889cb26b"
+project_hash = "07ab58daf47c7a94c192bc3f55f8a63f55ee6774"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -137,9 +137,9 @@ version = "1.0.1+0"
 
 [[deps.CUDA]]
 deps = ["AbstractFFTs", "Adapt", "BFloat16s", "CEnum", "CUDA_Driver_jll", "CUDA_Runtime_Discovery", "CUDA_Runtime_jll", "Crayons", "DataFrames", "ExprTools", "GPUArrays", "GPUCompiler", "KernelAbstractions", "LLVM", "LLVMLoopInfo", "LazyArtifacts", "Libdl", "LinearAlgebra", "Logging", "NVTX", "Preferences", "PrettyTables", "Printf", "Random", "Random123", "RandomNumbers", "Reexport", "Requires", "SparseArrays", "Statistics", "UnsafeAtomicsLLVM"]
-git-tree-sha1 = "64461b0e9df3069248979113ce8ab6d11bd371cf"
+git-tree-sha1 = "95ac638373ac40e29c1b6d086a3698f5026ff6a6"
 uuid = "052768ef-5323-5732-b1bb-66c8b64840ba"
-version = "5.1.0"
+version = "5.1.2"
 weakdeps = ["ChainRulesCore", "SpecialFunctions"]
 
     [deps.CUDA.extensions]
@@ -1157,9 +1157,9 @@ version = "0.9.0"
 
 [[deps.Oceananigans]]
 deps = ["Adapt", "CUDA", "Crayons", "CubedSphere", "Dates", "Distances", "DocStringExtensions", "FFTW", "Glob", "IncompleteLU", "InteractiveUtils", "IterativeSolvers", "JLD2", "KernelAbstractions", "LinearAlgebra", "Logging", "MPI", "NCDatasets", "OffsetArrays", "OrderedCollections", "PencilArrays", "PencilFFTs", "Pkg", "Printf", "Random", "Rotations", "SeawaterPolynomials", "SparseArrays", "Statistics", "StructArrays"]
-git-tree-sha1 = "7ef7083f3fb79f225c50716bee81265c626ff98d"
+git-tree-sha1 = "ead1d8ec6911ff84ef52c387c827553bbc859c1b"
 uuid = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
-version = "0.90.1"
+version = "0.90.6"
 
     [deps.Oceananigans.extensions]
     OceananigansEnzymeCoreExt = "EnzymeCore"
@@ -1168,10 +1168,13 @@ version = "0.90.1"
     EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
 
 [[deps.OffsetArrays]]
-deps = ["Adapt"]
-git-tree-sha1 = "2ac17d29c523ce1cd38e27785a7d23024853a4bb"
+git-tree-sha1 = "6a731f2b5c03157418a20c12195eb4b74c8f8621"
 uuid = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
-version = "1.12.10"
+version = "1.13.0"
+weakdeps = ["Adapt"]
+
+    [deps.OffsetArrays.extensions]
+    OffsetArraysAdaptExt = "Adapt"
 
 [[deps.Ogg_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]

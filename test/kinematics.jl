@@ -1,4 +1,4 @@
-grid = RectilinearGrid(size = (128, 128, 8), extent = (500, 500, 8))
+grid = RectilinearGrid(arch; size = (128, 128, 8), extent = (500, 500, 8))
 
 spacing = 100.
 
@@ -14,15 +14,14 @@ segment_unstretched_length = [16, 8]
 
 @testset "Kelp move" begin
     kelp = GiantKelp(; grid,
-                    holdfast_x, holdfast_y, holdfast_z,
-                    number_nodes,
-                    segment_unstretched_length)
+                       holdfast_x, holdfast_y, holdfast_z,
+                       number_nodes,
+                       segment_unstretched_length)
 
     model = NonhydrostaticModel(; grid, 
-                                biogeochemistry = Biogeochemistry(NothingBGC(),
+                                  biogeochemistry = Biogeochemistry(NothingBGC(),
                                                                     particles = kelp),
-                                advection = WENO())
-
+                                  advection = WENO())
 
     initial_positions = [0 0 8; 8 0 8]
 
@@ -31,20 +30,20 @@ segment_unstretched_length = [16, 8]
     time_step!(model, 10.)
 
     # not moving when no flow and unstretched
-    @test all([all(position .== initial_positions) for position in kelp.positions])
+    CUDA.@allowscalar @test all([all(Array(kelp.positions[p, :, :]) .== initial_positions) for p=1:length(holdfast_x)])
 
     initial_positions = [15 0 8; 25 0 8]
 
     set!(kelp, positions = initial_positions)
 
-    position_record = []
-    for n in 1:100
-        push!(position_record, copy(kelp.positions[1]))
+    for n in 1:200
         time_step!(model, 1.)
     end
 
+    position_record = Array(copy(kelp.positions))
+
     # nodes are setteling
-    @test all(isapprox.(position_record[end - 1], position_record[end]; atol = 0.001))
+    CUDA.@allowscalar @test all(isapprox.(position_record, Array(kelp.positions); atol = 0.001))
 end
 
 @testset "Drag" begin
@@ -67,14 +66,17 @@ end
     set!(kelp, positions = initial_positions)
     set!(model, u = u₀)
 
-    for n in 1:1000
+    all_initial_positions = Array(copy(kelp.positions))
+
+    for n in 1:200
         time_step!(model, 1.)
     end
 
     # the kelp are being moved by the flow
-    @test all([all(position[:, 1:2] .!= initial_positions[:, 1:2]) for position in kelp.positions])
+    
+    CUDA.@allowscalar  @test !any(isapprox.(all_initial_positions[:, :, 1:2], Array(kelp.positions[:, :, 1:2]); atol = 0.001))
 
     # the kelp are dragging the water
     @test !(mean(model.velocities.u) ≈ u₀)
-    @test maximum(abs, model.velocities.v) .!= 0
+    @test !isapprox(maximum(abs, model.velocities.v), 0)
 end

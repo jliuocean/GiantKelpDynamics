@@ -1,4 +1,4 @@
-grid = RectilinearGrid(size = (128, 128, 8), extent = (500, 500, 8))
+grid = RectilinearGrid(arch; size = (128, 128, 8), extent = (500, 500, 8))
 
 spacing = 100.
 
@@ -27,13 +27,17 @@ model = NonhydrostaticModel(; grid,
 
     set!(kelp, positions = initial_positions)
 
-    @test all([all(position .== initial_positions) for position in kelp.positions])
+    @test all([all(Array(kelp.positions[p, :, :]) .== initial_positions) for p in 1:length(kelp)])
 
-    initial_positions = vec([[i 0 8; 8 0 8] for (i, x) in enumerate(x_pattern), (j, y) in enumerate(y_pattern)])
+    initial_positions = Array(similar(kelp.positions))
+
+    for p in 1:length(kelp)
+        initial_positions[p, :, :] .= [p 0 8; 8 0 8]
+    end
 
     set!(kelp, positions = initial_positions)
 
-    @test all(kelp.positions .== initial_positions)
+    @test all(Array(kelp.positions) .== initial_positions)
 end
 
 @testset "Output" begin
@@ -42,6 +46,8 @@ end
     simulation.output_writers[:kelp] = JLD2OutputWriter(model, (; positions = kelp.positions, blade_areas = kelp.blade_areas), overwrite_existing = true, schedule = IterationInterval(1), filename = "kelp.jld2")
     
     run!(simulation)
+
+    # TODO: make some utility to load this stuff
 
     file = jldopen("kelp.jld2")
 
@@ -54,9 +60,7 @@ end
 
     close(file)
 
-    @test length(positions[1]) == length(kelp)
+    @test all(positions[end][1, :, :] .== Array(kelp.positions[1, :, :]))
 
-    @test all(positions[end][1] .== kelp.positions[1])
-
-    @test all(blade_areas[end][1] .== kelp.blade_areas[1])
+    @test all(blade_areas[end][1, :, :] .== Array(kelp.blade_areas[1, :, :]))
 end
