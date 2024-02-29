@@ -11,13 +11,12 @@ We have implemented it in the particle in the framework of [OceanBioME.jl](https
 ## Model details
 The kinematic model discretises each kelp individual into segments to which several forces: drag, buoyancy, tension, and inertial, are applied. This is shown in this diagram:
 
-![Diagram of the discretization and forces on each segment](https://github.com/jagoosw/GiantKelpDynamics/assets/26657828/887a0860-83ff-44f6-bb64-cc7a859a05d9)
+![Diagram of the discretization and forces on each segment](https://github.com/jagoosw/GiantKelpDynamics/assets/26657828/4a8aef46-e5c8-45b0-939e-0bbc281b3253)
 
 Further details can be found in [Strong-Wright and Taylor, In Review](mailto:js2430@cam.ac.uk).
 
 ## Kelp forests
 The model is designed to be used to simulate kelp forests and reproduce their motion ([Strong-Wright and Taylor, In Review](mailto:js2430@cam.ac.uk)). This figure shows an example of the flow around a forest:
-
 
 ![Tracer released from a kelp forest within a simple tidal flow](https://github.com/jagoosw/GiantKelpDynamics/assets/26657828/4df8b614-240f-4e44-bec1-4bbae4ebd7bb)
 
