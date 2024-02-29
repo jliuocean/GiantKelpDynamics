@@ -1,4 +1,5 @@
 # GiantKelpDynamics
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10727202.svg)](https://doi.org/10.5281/zenodo.10727202)
 
 ``GiantKelpDynamics.jl`` is a Julia package providing a dynamical model for the motion (and in the future the growth and biogeochemical interactions) of giant kelp (Macrocystis pyrifera).
 
@@ -8,7 +9,7 @@ https://github.com/jagoosw/GiantKelpDynamics/assets/26657828/2383251b-656a-4f1d-
 
 We have implemented it in the particle in the framework of [OceanBioME.jl](https://github.com/OceanBioME/OceanBioME.jl/) and coupled with the fluid dynamics of [Oceananigans.jl](https://github.com/CliMA/Oceananigans.jl/).
 
-> Please note that the release [v0.0.1](mailto:js2430@cam.ac.uk) accompanies the publication [*A model of tidal flow and tracer release in a giant kelp forest* (Strong-Wright and Taylor, 2023)](mailto:js2430@cam.ac.uk) and contains the version of the code used for the experiments in that work. We **do not** recommend using that version and suggest that the current version is used as it has been substantially rewritten to improve the maintainability of the code (while leaving the mathematical model of the motion unchanged).
+> Please note that the release [v0.0.1]([mailto:js2430@cam.ac.uk](https://doi.org/10.5281/zenodo.10727203)) accompanies the publication [*A model of tidal flow and tracer release in a giant kelp forest* (Strong-Wright and Taylor, 2023)](mailto:js2430@cam.ac.uk) and contains the version of the code used for the experiments in that work. We **do not** recommend using that version and suggest that the current version is used as it has been substantially rewritten to improve the maintainability of the code (while leaving the mathematical model of the motion unchanged) and therefore a significant amount of breaking changes have been introduced since this version.
 
 ## Model details
 The kinematic model discretises each kelp individual into segments to which several forces: drag, buoyancy, tension, and inertial, are applied. This is shown in this diagram:
@@ -26,4 +27,4 @@ The model is designed to be used to simulate kelp forests and reproduce their mo
 Simple examples and documentation can be found [here](mailto:js2430@cam.ac.uk)
 
 ## Citation
-If you use this model in your work please cite [Strong-Wright and Taylor, 2023](mailto:js2430@cam.ac.uk) and link to this repository. You may also cite the specific version used by citing the [Zenode archive](mailto:js2430@cam.ac.uk).
+If you use this model in your work please cite [Strong-Wright and Taylor, 2023](mailto:js2430@cam.ac.uk) and link to this repository. You may also cite the specific version used by citing the [Zenode archive](https://zenodo.org/records/10727202).
