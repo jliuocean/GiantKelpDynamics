@@ -204,7 +204,7 @@ end
         v = @inbounds velocity[i, j, k]
         res += v * abs(v)
     end
-    return sign(res) * sqrt(abs(res)) / (k2 - k1 + 1)
+    return sign(res) * sqrt(abs(res)) / (K2 - K1 + 1)
 end
 
 @inline function mean_field(velocity, i::Int, j::Int, ::Val{K1}, ::Val{K2}) where {K1, K2}
@@ -212,7 +212,7 @@ end
     @unroll for k in K1:K2
         res += @inbounds velocity[i, j, k]
     end
-    return res / (k2 - k1 + 1)
+    return res / (K2 - K1 + 1)
 end
 
 @inline tension(Δx, l₀, Aᶜ, k, α) = ifelse(Δx > l₀ && !(Δx == 0.0), k * (max(0, (Δx - l₀)) / l₀) ^ α * Aᶜ, 0.0)
