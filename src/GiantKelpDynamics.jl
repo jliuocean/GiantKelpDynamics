@@ -17,11 +17,10 @@ using Oceananigans: CPU
 using KernelAbstractions.Extras: @unroll
 using OceanBioME.Particles: BiogeochemicalParticles
 using Oceananigans: Center
-using Oceananigans.Architectures: architecture, device, arch_array
+using Oceananigans.Architectures: architecture, device, on_architecture
 using Oceananigans.Biogeochemistry: AbstractContinuousFormBiogeochemistry
 using Oceananigans.Fields: Field, CenterField, VelocityFields
 using Oceananigans.Operators: volume
-using Oceananigans.Utils: arch_array
 
 import Adapt: adapt_structure
 import Base: size, length, show, summary
@@ -199,32 +198,32 @@ function GiantKelp(; grid,
 
     arch = architecture(grid)
 
-    holdfast_x = arch_array(arch, holdfast_x)
-    holdfast_y = arch_array(arch, holdfast_y)
-    holdfast_z = arch_array(arch, holdfast_z)
-    scalefactor = arch_array(arch, scalefactor)
+    holdfast_x = on_architecture(arch, holdfast_x)
+    holdfast_y = on_architecture(arch, holdfast_y)
+    holdfast_z = on_architecture(arch, holdfast_z)
+    scalefactor = on_architecture(arch, scalefactor)
 
     
-    velocities = arch_array(arch, zeros(number_kelp, number_nodes, 3))
-    positions = arch_array(arch, zeros(number_kelp, number_nodes, 3))
+    velocities = on_architecture(arch, zeros(number_kelp, number_nodes, 3))
+    positions = on_architecture(arch, zeros(number_kelp, number_nodes, 3))
 
-    positions_ijk = arch_array(arch, ones(Int, number_kelp, number_nodes, 3))
+    positions_ijk = on_architecture(arch, ones(Int, number_kelp, number_nodes, 3))
 
 
-    relaxed_lengths = arch_array(arch, ones(number_kelp, number_nodes))
-    stipe_radii = arch_array(arch, ones(number_kelp, number_nodes))
-    blade_areas = arch_array(arch, ones(number_kelp, number_nodes))
-    pneumatocyst_volumes = arch_array(arch, ones(number_kelp, number_nodes))
+    relaxed_lengths = on_architecture(arch, ones(number_kelp, number_nodes))
+    stipe_radii = on_architecture(arch, ones(number_kelp, number_nodes))
+    blade_areas = on_architecture(arch, ones(number_kelp, number_nodes))
+    pneumatocyst_volumes = on_architecture(arch, ones(number_kelp, number_nodes))
 
     set!(relaxed_lengths, segment_unstretched_length)
     set!(stipe_radii, initial_stipe_radii)
     set!(blade_areas, initial_blade_areas)
     set!(pneumatocyst_volumes, initial_pneumatocyst_volume)
 
-    accelerations = arch_array(arch, zeros(number_kelp, number_nodes, 3))
-    old_velocities = arch_array(arch, zeros(number_kelp, number_nodes, 3))
-    old_accelerations = arch_array(arch, zeros(number_kelp, number_nodes, 3))
-    drag_forces = arch_array(arch, zeros(number_kelp, number_nodes, 3))
+    accelerations = on_architecture(arch, zeros(number_kelp, number_nodes, 3))
+    old_velocities = on_architecture(arch, zeros(number_kelp, number_nodes, 3))
+    old_accelerations = on_architecture(arch, zeros(number_kelp, number_nodes, 3))
+    drag_forces = on_architecture(arch, zeros(number_kelp, number_nodes, 3))
 
     return GiantKelp(holdfast_x, holdfast_y, holdfast_z,
                      scalefactor,
@@ -328,7 +327,7 @@ function set!(ϕ, value)
     elseif length(size(value)) == 2
         set_2d!(ϕ, value)
     elseif size(value) == size(ϕ)
-        set!(ϕ, arch_array(architecture(ϕ), value))
+        set!(ϕ, on_architecture(architecture(ϕ), value))
     else
         error("Failed to set property with size $(size(ϕ)) to values with size $(size(value))")
     end
@@ -353,7 +352,7 @@ const PropertyArray = Union{Array, CuArray}
 
 fetch_output(output::Array, model) = output
 
-fetch_output(output::CuArray, model) = arch_array(CPU(), output)
+fetch_output(output::CuArray, model) = on_architecture(CPU(), output)
 
 convert_output(output::Array, writer) = output
 
