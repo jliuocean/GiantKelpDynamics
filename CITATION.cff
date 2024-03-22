@@ -4,7 +4,7 @@ authors:
 - family-names: Strong-Wright
   given-names: Jago
 orcid: https://orcid.org/0000-0002-7174-5283
-title:jagoosw/GiantKelpDynamics: Code for "A model of tidal flow and tracer release in a giant kelp forest"
-version: v0.1.0
+title: "GiantKelpDynamics.jl: A dynamical model for the motion of giant kelp (Macrocystis pyrifera). "
+version: v0.3.0
 date-released: 2024-02-29
                     
