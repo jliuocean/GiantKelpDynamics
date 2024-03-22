@@ -19,7 +19,7 @@ kelp = GiantKelp(; grid,
 
 model = NonhydrostaticModel(; grid, 
                             biogeochemistry = Biogeochemistry(NothingBGC(),
-                                                                particles = kelp),
+                                                              particles = kelp),
                             advection = WENO())
 
 @testset "Set" begin

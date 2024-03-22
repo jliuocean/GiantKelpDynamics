@@ -459,7 +459,7 @@ end
 
             # if we change func to just p, n dependencies we can just calculate it once
             for k in k1:k2
-                total_scaling = sf * volume(i, j, k, grid, Center(), Center(), Center()) / total_volume
+                total_scaling = sf / total_volume * volume(i, j, k, grid, Center(), Center(), Center())
                 atomic_add!(tracer_tendency, i, j, k, total_scaling * forcing.func(i, j, k, p, n, grid, clock, particles, tracers, forcing.parameters))
             end
         end

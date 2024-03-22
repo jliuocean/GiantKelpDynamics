@@ -1,5 +1,3 @@
-grid = RectilinearGrid(arch; size = (10, 10, 10), extent = (10, 10, 10))
-
 holdfast_x = [5.]
 holdfast_y = [5.]
 holdfast_z = [-10.]
@@ -9,51 +7,56 @@ max_Δt = 1.0
 number_nodes = 1
 segment_unstretched_length = [10., ]
 
-@inline function tracer_release(i, j, k, p, n, grid, clock, particles, tracers, parameters)
-    C = tracers.C[i, j, k]
-    
-    return (parameters.base_value - C) / parameters.uptake_timescale / parameters.n_nodes
-end
+@inline constant_tracer_release(i, j, k, p, n, grid, clock, particles, tracers, parameters) = 0.1 / Oceananigans.Operators.volume(i, j, k, grid, Center(), Center(), Center())
 
-@inline analytical_concentration(t, scalefactor, parameters) = (1 - exp(- t * scalefactor / parameters.uptake_timescale / parameters.n_nodes / 10))
+@inline scaled_tracer_release(i, j, k, p, n, grid, clock, particles, tracers, parameters) = parameters * 0.1 / Oceananigans.Operators.volume(i, j, k, grid, Center(), Center(), Center())
 
-C = Forcing(tracer_release; parameters = (base_value = 1., uptake_timescale = 1hour, n_nodes = number_nodes))
+@inline total_released_tracer(t) = 0.1 * t
 
 @testset "Tracer release" begin
-    kelp = GiantKelp(; grid,
-                       holdfast_x, holdfast_y, holdfast_z,
-                       number_nodes,
-                       segment_unstretched_length,
-                       tracer_forcing = (; C))
+    for horizontal_resolution in (10, 20), vertical_resolution in (10, 20)
+        grid = RectilinearGrid(arch; size = (horizontal_resolution, horizontal_resolution, vertical_resolution), extent = (10, 10, 10))
 
-    model = NonhydrostaticModel(; grid, 
-                                tracers = (:C, ),
-                                biogeochemistry = Biogeochemistry(NothingBGC(),
-                                                                    particles = kelp),
-                                advection = WENO())
+        kelp = GiantKelp(; grid,
+                        holdfast_x, holdfast_y, holdfast_z,
+                        number_nodes,
+                        segment_unstretched_length,
+                        tracer_forcing = (; C = Forcing(constant_tracer_release)))
 
-    initial_positions = [0 0 10;]
+        model = NonhydrostaticModel(; grid, 
+                                    tracers = (:C, ),
+                                    biogeochemistry = Biogeochemistry(NothingBGC(),
+                                                                        particles = kelp),
+                                    advection = WENO())
 
-    set!(kelp, positions = initial_positions)
+        initial_positions = [0 0 10;]
 
-    concentration_record = Float64[]
+        set!(kelp, positions = initial_positions)
 
-    Δt = 100.
+        concentration_record = Float64[]
 
-    CUDA.@allowscalar for n in 1:500
-        time_step!(model, Δt)
-        push!(concentration_record, copy(model.tracers.C[6, 6, 10]))
+        Δt = 100.
+
+        Oceananigans.TimeSteppers.update_state!(model)
+        Oceananigans.Models.LagrangianParticleTracking.update_lagrangian_particle_properties!(kelp, model, model.biogeochemistry, Δt)
+
+        CUDA.@allowscalar for n in 1:500
+            time_step!(model, Δt)
+            push!(concentration_record, sum([model.tracers.C[kelp.positions_ijk[1, 1, 1], kelp.positions_ijk[1, 1, 2], k] * Oceananigans.Operators.volume(1, 1, k, grid, Center(), Center(), Center()) for k=1:grid.Nz]))
+        end
+
+        @test all([isapprox(conc, total_released_tracer(n * Δt), atol = 0.01) for (n, conc) in enumerate(concentration_record)])
     end
 
-    @test all([isapprox(conc, analytical_concentration(n * Δt, 1, C.parameters), atol = 0.01) for (n, conc) in enumerate(concentration_record)])
+    # check scale factor and parametrers work
+    grid = RectilinearGrid(arch; size = (10, 10, 10), extent = (10, 10, 10))
 
-    # check scale factors work
     kelp = GiantKelp(; grid,
-                    holdfast_x, holdfast_y, holdfast_z,
-                    number_nodes,
-                    segment_unstretched_length,
-                    scalefactor = [2., ],
-                    tracer_forcing = (; C))
+                      holdfast_x, holdfast_y, holdfast_z,
+                      number_nodes,
+                      segment_unstretched_length,
+                      scalefactor = [2., ],
+                      tracer_forcing = (; C = Forcing(scaled_tracer_release; parameters = 0.5)))
 
     model = NonhydrostaticModel(; grid, 
                                 tracers = (:C, ),
@@ -69,10 +72,13 @@ C = Forcing(tracer_release; parameters = (base_value = 1., uptake_timescale = 1h
 
     Δt = 50.
 
-    CUDA.@allowscalar for n in 1:1000
+    Oceananigans.TimeSteppers.update_state!(model)
+    Oceananigans.Models.LagrangianParticleTracking.update_lagrangian_particle_properties!(kelp, model, model.biogeochemistry, Δt)
+
+    CUDA.@allowscalar for n in 1:500
         time_step!(model, Δt)
-        push!(concentration_record, copy(model.tracers.C[6, 6, 10]))
+        push!(concentration_record, sum([model.tracers.C[kelp.positions_ijk[1, 1, 1], kelp.positions_ijk[1, 1, 2], k] * Oceananigans.Operators.volume(1, 1, k, grid, Center(), Center(), Center()) for k=1:grid.Nz]))
     end
 
-    @test all([isapprox(conc, analytical_concentration(n * Δt, 2, C.parameters), atol = 0.01) for (n, conc) in enumerate(concentration_record)])
+    @test all([isapprox(conc, total_released_tracer(n * Δt), atol = 0.01) for (n, conc) in enumerate(concentration_record)])
 end
