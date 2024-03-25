@@ -115,9 +115,9 @@ end
     k1 = min(k⁻, k)
     k2 = max(k⁻, k)
 
-    uʷ = mean_squared_field(water_velocities[1], i, j, Val(k1), Val(k2))
-    vʷ = mean_squared_field(water_velocities[2], i, j, Val(k1), Val(k2))
-    wʷ = mean_squared_field(water_velocities[3], i, j, Val(k1), Val(k2))
+    uʷ = mean_squared_field(water_velocities[1], i, j, k1, k2)
+    vʷ = mean_squared_field(water_velocities[2], i, j, k1, k2)
+    wʷ = mean_squared_field(water_velocities[3], i, j, k1, k2)
 
     uʳ = uʷ - uⁱ
     vʳ = vʷ - vⁱ
@@ -125,9 +125,9 @@ end
 
     sʳ = sqrt(uʳ^2 + vʳ^2 + wʳ^2)
 
-    ∂ₜuʷ = mean_squared_field(water_accelerations[1], i, j, Val(k1), Val(k2))
-    ∂ₜvʷ = mean_squared_field(water_accelerations[2], i, j, Val(k1), Val(k2))
-    ∂ₜwʷ = mean_squared_field(water_accelerations[3], i, j, Val(k1), Val(k2))
+    ∂ₜuʷ = mean_squared_field(water_accelerations[1], i, j, k1, k2)
+    ∂ₜvʷ = mean_squared_field(water_accelerations[2], i, j, k1, k2)
+    ∂ₜwʷ = mean_squared_field(water_accelerations[3], i, j, k1, k2)
 
     θ = acos(min(1, abs(uʳ * Δx + vʳ * Δy + wʳ * Δz) / (sʳ * l + eps(0.0))))
     Aˢ = 2 * rˢ * l * abs(sin(θ)) + π * rˢ * abs(cos(θ))
@@ -198,21 +198,21 @@ end
 
 # This is only valid on a regularly spaced grid
 # Benchmarks a lot lot faster than mean or sum()/dk etc. and about same speed as _interpolate which is weird
-@inline function mean_squared_field(velocity, i::Int, j::Int, ::Val{K1}, ::Val{K2}) where {K1, K2}
+@inline function mean_squared_field(velocity, i::Int, j::Int, k1::Int, k2::Int)
     res = 0.0
-    @unroll for k in K1:K2
+    @unroll for k in k1:k2
         v = @inbounds velocity[i, j, k]
         res += v * abs(v)
     end
-    return sign(res) * sqrt(abs(res)) / (K2 - K1 + 1)
+    return sign(res) * sqrt(abs(res)) / (k2 - k1 + 1)
 end
 
-@inline function mean_field(velocity, i::Int, j::Int, ::Val{K1}, ::Val{K2}) where {K1, K2}
+@inline function mean_field(velocity, i::Int, j::Int, k1::Int, k2::Int)
     res = 0.0
-    @unroll for k in K1:K2
+    @unroll for k in k1:k2
         res += @inbounds velocity[i, j, k]
     end
-    return res / (K2 - K1 + 1)
+    return res / (k2 - k1 + 1)
 end
 
 @inline tension(Δx, l₀, Aᶜ, k, α) = ifelse(Δx > l₀ && !(Δx == 0.0), k * (max(0, (Δx - l₀)) / l₀) ^ α * Aᶜ, 0.0)
